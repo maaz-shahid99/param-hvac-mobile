@@ -43,10 +43,10 @@ dependencies:
   # Intl for Formatting
   intl: ^0.19.0
 
-  # NEW: Firebase & Crypto
-  firebase_core: ^2.27.0
-  firebase_auth: ^4.17.8
-  cloud_firestore: ^4.15.8
+  # Cloud alerting service (AWS) — REST client for auth, topology sync,
+  # thresholds, live temps and alerts. (Replaced the unused Firebase deps:
+  # accounts/notifications are handled server-side on AWS — Cognito/SES/SNS.)
+  http: ^1.2.0
   encrypt: ^5.0.3  # For securing Wi-Fi passwords locally
 
 dev_dependencies:

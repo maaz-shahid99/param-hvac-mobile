@@ -1,23 +1,70 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/rack_topology.dart';
+import 'cloud_api.dart';
 
-/// Owns the operator-configured rack -> unit -> port layout and persists it
-/// locally (SharedPreferences). The app is the source of truth for the
-/// topology; only the flat box/slot + a human label get pushed to the bridge
-/// when a sensor is assigned.
+/// Owns the operator-configured rack -> unit -> port layout.
+///
+/// The cloud (AWS) is the source of truth once signed in, so the layout follows
+/// the organization across phones and reinstalls; SharedPreferences is kept as a
+/// local cache for instant load and offline use. When [_cloud] is bound, every
+/// mutation is pushed to the cloud (best-effort) and the cloud rebuilds its
+/// sensor map for the threshold engine.
 class TopologyService extends ChangeNotifier {
   static const String _prefsKey = 'rack_topology_json';
 
   RackTopology _topology = RackTopology();
   bool _loaded = false;
+  CloudApi? _cloud;
+  bool _syncing = false;
 
   List<Rack> get racks => List.unmodifiable(_topology.racks);
   bool get isLoaded => _loaded;
   bool get isEmpty => _topology.racks.isEmpty;
+  bool get isSyncing => _syncing;
 
   // ---- unique id helper -----------------------------------------------------
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
+
+  // ---- cloud binding --------------------------------------------------------
+  /// Bind (on sign-in) or unbind (on sign-out) the cloud backend.
+  void bindCloud(CloudApi? cloud) {
+    _cloud = cloud;
+  }
+
+  /// Pull the authoritative topology from the cloud and replace the local cache.
+  Future<void> loadFromCloud() async {
+    final cloud = _cloud;
+    if (cloud == null || !cloud.isConfigured) return;
+    _syncing = true;
+    notifyListeners();
+    try {
+      final data = await cloud.getTopology();
+      final topo = data['topology'];
+      if (topo is Map<String, dynamic>) {
+        _topology = RackTopology.fromJsonString(jsonEncode(topo));
+        _loaded = true;
+        await _cacheLocally();
+      }
+    } catch (_) {
+      // Offline / not reachable: keep the local cache that load() already set.
+    } finally {
+      _syncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _pushToCloud() async {
+    final cloud = _cloud;
+    if (cloud == null || !cloud.isConfigured) return;
+    try {
+      await cloud.putTopology(
+          jsonDecode(_topology.toJsonString()) as Map<String, dynamic>);
+    } catch (_) {
+      // best-effort; the local cache is still the latest and will re-push later
+    }
+  }
 
   // ---- persistence ----------------------------------------------------------
   Future<void> load() async {
@@ -31,14 +78,19 @@ class TopologyService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _save() async {
-    notifyListeners();
+  Future<void> _cacheLocally() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefsKey, _topology.toJsonString());
     } catch (_) {
-      // best-effort; UI already updated
+      // best-effort
     }
+  }
+
+  Future<void> _save() async {
+    notifyListeners();
+    await _cacheLocally();
+    await _pushToCloud();
   }
 
   // ---- racks ----------------------------------------------------------------

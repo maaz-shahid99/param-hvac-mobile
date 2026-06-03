@@ -566,6 +566,8 @@ class BLEService extends ChangeNotifier {
     String zone = 'Default',
     String netName = 'ThreadNetwork',
     String discoveryUrl = '',
+    String cloudUrl = '',
+    String cloudKey = '',
   }) async {
     if (_targetCharacteristic == null) {
       throw Exception('Not connected');
@@ -581,6 +583,10 @@ class BLEService extends ChangeNotifier {
       'netName': netName,
     };
     if (discoveryUrl.isNotEmpty) payload['disc'] = discoveryUrl;
+    // Cloud alerting service (AWS): the gateway posts readings here so the
+    // threshold engine can alert the customer. Bridge.ino reads cloud/cloudKey.
+    if (cloudUrl.isNotEmpty) payload['cloud'] = cloudUrl;
+    if (cloudKey.isNotEmpty) payload['cloudKey'] = cloudKey;
 
     final jsonString = jsonEncode(payload);
     final command = 'PROVISION|$jsonString';

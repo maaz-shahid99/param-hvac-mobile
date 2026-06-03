@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../ble_service.dart';
+import '../services/auth_service.dart';
 
 class SettingsPage extends StatelessWidget {
   final VoidCallback onToggleTheme;
@@ -63,6 +64,20 @@ class SettingsPage extends StatelessWidget {
                   const SnackBar(content: Text('History cleared')),
                 );
               },
+            ),
+            const Divider(),
+            Consumer<AuthService>(
+              builder: (context, auth, _) => ListTile(
+                title: const Text('Sign out'),
+                subtitle: Text(auth.email.isEmpty
+                    ? 'Signed in to the cloud'
+                    : '${auth.email} • ${auth.role}'),
+                leading: const Icon(Icons.logout),
+                onTap: () async {
+                  await auth.signOut();
+                  if (context.mounted) Navigator.of(context).maybePop();
+                },
+              ),
             ),
             const Divider(),
             ListTile(

@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ble_service.dart';
 import 'services/topology_service.dart';
+import 'services/auth_service.dart';
 import 'screens/home_page.dart';
+import 'screens/login_page.dart';
+import 'screens/splash_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +15,7 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => BLEService()),
         ChangeNotifierProvider(create: (_) => TopologyService()..load()),
+        ChangeNotifierProvider(create: (_) => AuthService()..restore()),
       ],
       child: const MyApp(),
     ),
@@ -71,7 +75,51 @@ class _MyAppState extends State<MyApp> {
         ),
         useMaterial3: true,
       ),
-      home: HomePage(onToggleTheme: _toggleTheme),
+      home: _AuthGate(onToggleTheme: _toggleTheme),
+    );
+  }
+}
+
+/// Routes between splash (restoring session), login (signed out) and the app
+/// (signed in). On sign-in it binds the topology service to the cloud so the
+/// rack layout syncs instead of living only on this phone.
+class _AuthGate extends StatefulWidget {
+  final VoidCallback onToggleTheme;
+  const _AuthGate({required this.onToggleTheme});
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  AuthStatus _last = AuthStatus.unknown;
+
+  void _onAuthChanged(AuthService auth, TopologyService topo) {
+    if (auth.status == _last) return;
+    _last = auth.status;
+    if (auth.status == AuthStatus.signedIn) {
+      topo.bindCloud(auth.api);
+      topo.loadFromCloud();
+    } else if (auth.status == AuthStatus.signedOut) {
+      topo.bindCloud(null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer2<AuthService, TopologyService>(
+      builder: (context, auth, topo, _) {
+        // React to auth transitions without rebuilding loops.
+        WidgetsBinding.instance.addPostFrameCallback((_) => _onAuthChanged(auth, topo));
+        switch (auth.status) {
+          case AuthStatus.unknown:
+            return const SplashPage();
+          case AuthStatus.signedOut:
+            return const LoginPage();
+          case AuthStatus.signedIn:
+            return HomePage(onToggleTheme: widget.onToggleTheme);
+        }
+      },
     );
   }
 }

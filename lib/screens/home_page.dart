@@ -8,6 +8,7 @@ import 'settings_page.dart';
 import 'diagnostics_page.dart';
 import 'system_page.dart';
 import 'rack_layout_page.dart';
+import 'alerts_thresholds_page.dart';
 import 'qr_scanner_page.dart';
 import '../widgets/assign_sensor_dialog.dart';
 import '../widgets/connection_status_card.dart';
@@ -145,6 +146,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 );
               },
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications_active_outlined),
+            tooltip: 'Alerts & Thresholds',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AlertsThresholdsPage()),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.view_module),
