@@ -15,6 +15,7 @@ class _RouterSetupDialogState extends State<RouterSetupDialog> {
   final _passController = TextEditingController();
   final _zoneController = TextEditingController(text: 'Default');
   final _netNameController = TextEditingController(text: 'ThreadNet');
+  final _discController = TextEditingController();
   bool _isLoading = false;
 
   @override
@@ -23,6 +24,7 @@ class _RouterSetupDialogState extends State<RouterSetupDialog> {
     _passController.dispose();
     _zoneController.dispose();
     _netNameController.dispose();
+    _discController.dispose();
     super.dispose();
   }
 
@@ -38,6 +40,7 @@ class _RouterSetupDialogState extends State<RouterSetupDialog> {
         password: _passController.text.trim(),
         zone: _zoneController.text.trim(),
         netName: _netNameController.text.trim(),
+        discoveryUrl: _discController.text.trim(),
       );
 
       if (!mounted) return;
@@ -104,6 +107,15 @@ class _RouterSetupDialogState extends State<RouterSetupDialog> {
                   prefixIcon: Icon(Icons.hub),
                 ),
                 validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _discController,
+                decoration: const InputDecoration(
+                  labelText: 'Discovery Server URL (Optional)',
+                  prefixIcon: Icon(Icons.dns),
+                  hintText: 'http://10.14.98.109:8000',
+                ),
               ),
             ],
           ),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../ble_service.dart';
 import '../screens/history_page.dart';
 import 'router_setup_dialog.dart';
+import 'assign_sensor_dialog.dart';
 import '../utils/auth_guard.dart'; // NEW: Import the auth guard
 
 class QuickActionsCard extends StatelessWidget {
@@ -83,7 +84,13 @@ class QuickActionsCard extends StatelessWidget {
                   label: const Text('Router Setup'),
                   onPressed: () => runWithAuthGuard(context, () => _showRouterSetupDialog(context)),
                 ),
-                // 3. Manual Command (Guarded)
+                // 3. Assign Sensor (Guarded) — pick a live device + location
+                ActionChip(
+                  avatar: const Icon(Icons.grid_view, size: 18),
+                  label: const Text('Assign Sensor'),
+                  onPressed: () => runWithAuthGuard(context, () => showAssignSensorDialog(context)),
+                ),
+                // 4. Manual Command (Guarded)
                 ActionChip(
                   avatar: const Icon(Icons.code, size: 18),
                   label: const Text('Manual Command'),

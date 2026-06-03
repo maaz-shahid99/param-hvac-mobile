@@ -41,6 +41,46 @@ class CommissionedDevice {
   }
 }
 
+/// Snapshot of a bridge unit's status, parsed from the firmware's `SYS|...` reply.
+class SystemStatus {
+  final String role;       // LEADER / STANDBY
+  final int c3Version;     // Bridge (C3) firmware version
+  final int c6Version;     // Commissioner (C6) firmware version (-1 = unknown)
+  final String commState;  // ACTIVE / DISABLED / ?
+  final bool wifiUp;
+  final bool uplinkUp;     // discovered display node reachable
+  final DateTime updated;
+
+  SystemStatus({
+    required this.role,
+    required this.c3Version,
+    required this.c6Version,
+    required this.commState,
+    required this.wifiUp,
+    required this.uplinkUp,
+    required this.updated,
+  });
+
+  /// Parse "SYS|role=LEADER|c3=6|c6=7|comm=ACTIVE|wifi=1|node=1".
+  static SystemStatus? parse(String line) {
+    if (!line.startsWith('SYS|')) return null;
+    final map = <String, String>{};
+    for (final part in line.substring(4).split('|')) {
+      final i = part.indexOf('=');
+      if (i > 0) map[part.substring(0, i)] = part.substring(i + 1);
+    }
+    return SystemStatus(
+      role: map['role'] ?? '?',
+      c3Version: int.tryParse(map['c3'] ?? '') ?? -1,
+      c6Version: int.tryParse(map['c6'] ?? '') ?? -1,
+      commState: map['comm'] ?? '?',
+      wifiUp: map['wifi'] == '1',
+      uplinkUp: map['node'] == '1',
+      updated: DateTime.now(),
+    );
+  }
+}
+
 class BLEService extends ChangeNotifier {
   // Constants
   static const String serviceUuid = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
@@ -86,6 +126,15 @@ class BLEService extends ChangeNotifier {
   // --- NEW: Scan Results State ---
   List<ScanResult> _scanResults = [];
 
+  // --- Management state (System screen) ---
+  SystemStatus? _systemStatus;
+  String _otaStatus = '';   // latest OTA progress/result line from the bridge
+
+  // --- Live sensor list (NODES? -> dropdown of currently-reporting EUIs) ---
+  List<String> _liveNodes = [];
+  final List<String> _nodesAccumulator = [];
+  bool _collectingNodes = false;
+
   // Getters
   bool get isScanning => _isScanning;
   bool get isConnected => _isConnected;
@@ -96,6 +145,9 @@ class BLEService extends ChangeNotifier {
   bool get autoReconnect => _autoReconnect;
   BridgeAuthState get authState => _authState; // Expose auth state to UI
   List<ScanResult> get scanResults => List.unmodifiable(_scanResults); // Expose scan results
+  SystemStatus? get systemStatus => _systemStatus;
+  String get otaStatus => _otaStatus;
+  List<String> get liveNodes => List.unmodifiable(_liveNodes);
 
   BLEService() {
     _initializeSecretKey();
@@ -389,6 +441,68 @@ class BLEService extends ChangeNotifier {
         return;
       }
 
+      // 1b. System status (SYS|...) — refresh the System screen.
+      if (line.startsWith('SYS|')) {
+        final st = SystemStatus.parse(line);
+        if (st != null) {
+          _systemStatus = st;
+          notifyListeners();
+        }
+        return;
+      }
+
+      // 1c. Commissioner state (from explicit acks or the C6's state lines).
+      if (line.contains('COMMISSIONER_STARTED') ||
+          (line.contains('COMMISSIONER STATE UPDATE') && line.contains('ACTIVE'))) {
+        _addLog('✅ Commissioner ACTIVE');
+      } else if (line.contains('COMMISSIONER_STOPPED') ||
+          (line.contains('COMMISSIONER STATE UPDATE') && line.contains('DISABLED'))) {
+        _addLog('⏹ Commissioner stopped');
+      }
+
+      // 1d. OTA / firmware progress + results.
+      if (line.startsWith('OTA') || line.startsWith('[FLEETOTA]') ||
+          line.startsWith('OTAC6') || line.startsWith('ERR OTA') ||
+          line.startsWith('RESET_FLEET')) {
+        _otaStatus = line;
+        _addLog('🛠 $line');
+        notifyListeners();
+        return;
+      }
+
+      // 1d-2. Live device list (chunked): NODES_BEGIN / NODE|<eui> / NODES_END.
+      if (line == 'NODES_BEGIN') {
+        _collectingNodes = true;
+        _nodesAccumulator.clear();
+        return;
+      }
+      if (line == 'NODES_END') {
+        _collectingNodes = false;
+        _liveNodes = List<String>.from(_nodesAccumulator);
+        _addLog('📡 ${_liveNodes.length} live sensor(s)');
+        notifyListeners();
+        return;
+      }
+      if (line.startsWith('NODE|')) {
+        final eui = line.substring(5).trim().toLowerCase();
+        if (eui.isNotEmpty && !_nodesAccumulator.contains(eui)) {
+          _nodesAccumulator.add(eui);
+        }
+        if (!_collectingNodes) {
+          // tolerate a stray NODE| without a BEGIN
+          _liveNodes = List<String>.from(_nodesAccumulator);
+          notifyListeners();
+        }
+        return;
+      }
+
+      // 1e. Sensor → box/slot mapping result.
+      if (line.startsWith('ACK MAP') || line.startsWith('ERR MAP')) {
+        _addLog(line.startsWith('ACK') ? '✅ $line' : '❌ $line',
+            isError: line.startsWith('ERR'));
+        return;
+      }
+
       // 2. Wi-Fi Status Handling
       if (line.contains('WIFI_CONNECTED')) {
         _addLog('✅ Bridge successfully connected to Wi-Fi');
@@ -451,6 +565,7 @@ class BLEService extends ChangeNotifier {
     required String password,
     String zone = 'Default',
     String netName = 'ThreadNetwork',
+    String discoveryUrl = '',
   }) async {
     if (_targetCharacteristic == null) {
       throw Exception('Not connected');
@@ -465,6 +580,7 @@ class BLEService extends ChangeNotifier {
       'zone': zone,
       'netName': netName,
     };
+    if (discoveryUrl.isNotEmpty) payload['disc'] = discoveryUrl;
 
     final jsonString = jsonEncode(payload);
     final command = 'PROVISION|$jsonString';
@@ -478,6 +594,78 @@ class BLEService extends ChangeNotifier {
       _addLog('Failed to send provisioning command: $e', isError: true);
       rethrow;
     }
+  }
+
+  // --- Management commands (System screen) ---
+  // All are handled locally on the C3 (or relayed to the C6) and gated by the
+  // authenticated session, so they go over the UNSIGNED write path.
+
+  bool get _ready =>
+      _targetCharacteristic != null && _authState == BridgeAuthState.authenticated;
+
+  Future<void> requestSystemStatus() async {
+    if (!_ready) return; // polled silently; needs an unlocked session
+    await _writeCommandWithRetry('SYS?');
+  }
+
+  /// Ask the bridge for the list of currently-live sensor EUIs (NODES?).
+  /// The reply arrives async as NODES_BEGIN / NODE|<eui> / NODES_END and
+  /// populates [liveNodes].
+  Future<void> requestNodes() async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    _addLog('Requesting live sensor list...');
+    await _writeCommandWithRetry('NODES?');
+  }
+
+  Future<void> setCommissioner(bool enable) async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    _addLog(enable ? 'Enabling commissioner...' : 'Disabling commissioner...');
+    await _writeCommandWithRetry(enable ? 'commissioner_start' : 'commissioner_stop');
+  }
+
+  Future<void> updateThisGateway() async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    _otaStatus = 'Starting gateway update...';
+    notifyListeners();
+    _addLog('Firmware: updating this gateway (C6 + C3)...');
+    await _writeCommandWithRetry('OTA_SELF');
+  }
+
+  Future<void> updateWholeFleet() async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    _otaStatus = 'Broadcasting fleet update...';
+    notifyListeners();
+    _addLog('Firmware: rolling OTA out to the whole fleet...');
+    await _writeCommandWithRetry('OTA_FLEET');
+  }
+
+  /// Assign a sensor's EUI to a physical location. box/slot keep the legacy
+  /// box-grid dashboard working; [label] is the rich "Rack / Unit / Port"
+  /// location shown elsewhere. Wire format: MAP|<eui>|<box>|<slot>|<label>.
+  Future<void> setSensorMapping({
+    required String eui64,
+    required int box,
+    required String slot,
+    String label = '',
+  }) async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    _addLog('Assigning $eui64 -> ${label.isEmpty ? "box$box-$slot" : label}');
+    final cmd = label.isEmpty
+        ? 'MAP|$eui64|$box|$slot'
+        : 'MAP|$eui64|$box|$slot|$label';
+    await _writeCommandWithRetry(cmd);
+  }
+
+  Future<void> factoryResetUnit() async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    _addLog('Factory resetting THIS unit...');
+    await _writeCommandWithRetry('FACTORY_RESET');
+  }
+
+  Future<void> factoryResetFleet() async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    _addLog('Factory resetting the WHOLE fleet...');
+    await _writeCommandWithRetry('RESET_FLEET');
   }
 
   Future<void> commissionDevice(String eui64, String pskd) async {

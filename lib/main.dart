@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ble_service.dart';
+import 'services/topology_service.dart';
 import 'screens/home_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => BLEService(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => BLEService()),
+        ChangeNotifierProvider(create: (_) => TopologyService()..load()),
+      ],
       child: const MyApp(),
     ),
   );

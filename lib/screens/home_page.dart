@@ -6,7 +6,10 @@ import '../ble_service.dart';
 import 'onboarding_screen.dart';
 import 'settings_page.dart';
 import 'diagnostics_page.dart';
+import 'system_page.dart';
+import 'rack_layout_page.dart';
 import 'qr_scanner_page.dart';
+import '../widgets/assign_sensor_dialog.dart';
 import '../widgets/connection_status_card.dart';
 import '../widgets/disconnected_view.dart';
 import '../widgets/quick_actions_card.dart';
@@ -101,7 +104,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           duration: const Duration(seconds: 4),
         ),
       );
+
+      // On success, let the installer assign the sensor's physical box/slot so
+      // it maps to the right dashboard tile (sends MAP|eui|box|slot).
+      if (success && mounted) {
+        _promptSensorMapping(context, eui64);
+      }
     }
+  }
+
+  // After a successful commission, let the installer pick this sensor's
+  // physical location from the configured rack layout (device is pre-selected).
+  void _promptSensorMapping(BuildContext context, String eui64) {
+    showAssignSensorDialog(context, presetEui: eui64);
   }
 
   @override
@@ -130,6 +145,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 );
               },
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.view_module),
+            tooltip: 'Rack Layout',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const RackLayoutPage()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: 'System / Manage',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SystemPage()),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.settings),
