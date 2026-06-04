@@ -79,6 +79,8 @@ class AuthService extends ChangeNotifier {
       _memberStatus = (me['status'] ?? _memberStatus) as String;
       _name = (me['name'] ?? _name) as String;
       _phone = (me['phone'] ?? _phone) as String;
+      final code = (me['org_code'] ?? '') as String;
+      if (code.isNotEmpty) _orgCode = code;
       await _persistProfile();
       notifyListeners();
     } on CloudApiException catch (e) {
