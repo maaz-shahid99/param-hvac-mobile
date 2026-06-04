@@ -476,7 +476,34 @@ class BLEService extends ChangeNotifier {
         return;
       }
 
-      // 1d-2. Live device list (chunked): NODES_BEGIN / NODE|<eui> / NODES_END.
+      // 1d-1. Single-line replies (firmware >= c3 v12): one BLE notification so
+      // nothing is dropped. "NODES|<eui>,<eui>,..." and "ROUTERS|<eui>:<role>,...".
+      if (line.startsWith('NODES|')) {
+        final body = line.substring(6).trim();
+        _liveNodes = body.isEmpty
+            ? <String>[]
+            : body.split(',').map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty).toList();
+        _addLog('📡 ${_liveNodes.length} live sensor(s)');
+        notifyListeners();
+        return;
+      }
+      if (line.startsWith('ROUTERS|')) {
+        final body = line.substring(8).trim();
+        final m = <String, String>{};
+        if (body.isNotEmpty) {
+          for (final part in body.split(',')) {
+            final kv = part.split(':');
+            final eui = kv[0].trim().toLowerCase();
+            if (eui.isNotEmpty) m[eui] = kv.length > 1 ? kv[1].trim() : 'R';
+          }
+        }
+        _meshNodes = m;
+        _addLog('🧭 ${_meshNodes.length} mesh node(s)');
+        notifyListeners();
+        return;
+      }
+
+      // 1d-2. Live device list (chunked, legacy c3 < v12): NODES_BEGIN / NODE|<eui> / NODES_END.
       if (line == 'NODES_BEGIN') {
         _collectingNodes = true;
         _nodesAccumulator.clear();
