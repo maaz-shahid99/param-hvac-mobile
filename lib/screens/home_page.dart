@@ -9,6 +9,8 @@ import 'diagnostics_page.dart';
 import 'system_page.dart';
 import 'rack_layout_page.dart';
 import 'alerts_thresholds_page.dart';
+import 'members_page.dart';
+import '../services/auth_service.dart';
 import 'qr_scanner_page.dart';
 import '../widgets/assign_sensor_dialog.dart';
 import '../widgets/connection_status_card.dart';
@@ -166,6 +168,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 MaterialPageRoute(builder: (context) => const RackLayoutPage()),
               );
             },
+          ),
+          // Admin-only: approve members + control who gets email/SMS alerts.
+          Consumer<AuthService>(
+            builder: (context, auth, _) => auth.isAdmin
+                ? IconButton(
+                    icon: const Icon(Icons.group_outlined),
+                    tooltip: 'Members',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const MembersPage()),
+                      );
+                    },
+                  )
+                : const SizedBox.shrink(),
           ),
           IconButton(
             icon: const Icon(Icons.tune),

@@ -7,6 +7,7 @@ import 'services/auth_service.dart';
 import 'screens/home_page.dart';
 import 'screens/login_page.dart';
 import 'screens/splash_page.dart';
+import 'screens/pending_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -117,6 +118,8 @@ class _AuthGateState extends State<_AuthGate> {
           case AuthStatus.signedOut:
             return const LoginPage();
           case AuthStatus.signedIn:
+            // A member whose join request hasn't been approved waits here.
+            if (auth.isPending) return const PendingPage();
             return HomePage(onToggleTheme: widget.onToggleTheme);
         }
       },

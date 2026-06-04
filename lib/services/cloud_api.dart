@@ -56,18 +56,75 @@ class CloudApi {
     required String tenantName,
     required String email,
     required String password,
+    String name = '',
+    String phone = '',
   }) async {
     final r = await http.post(_u('/v1/auth/register'),
         headers: _headers(auth: false),
         body: jsonEncode({
           'bootstrap_token': bootstrapToken,
           'tenant_name': tenantName,
+          'name': name,
           'email': email,
+          'phone': phone,
           'password': password,
         }));
     final data = await _decode(r) as Map<String, dynamic>;
     token = data['token'] as String?;
     return data;
+  }
+
+  /// Join an existing org by its code — creates a pending member.
+  Future<Map<String, dynamic>> join({
+    required String orgCode,
+    required String email,
+    required String password,
+    String name = '',
+    String phone = '',
+  }) async {
+    final r = await http.post(_u('/v1/auth/join'),
+        headers: _headers(auth: false),
+        body: jsonEncode({
+          'org_code': orgCode,
+          'name': name,
+          'email': email,
+          'phone': phone,
+          'password': password,
+        }));
+    final data = await _decode(r) as Map<String, dynamic>;
+    token = data['token'] as String?;
+    return data;
+  }
+
+  /// The caller's own profile (role/status/...). Used to poll for approval.
+  Future<Map<String, dynamic>> me() async {
+    final r = await http.get(_u('/v1/me'), headers: _headers());
+    return await _decode(r) as Map<String, dynamic>;
+  }
+
+  // ---- members (admin) ------------------------------------------------------
+  Future<List<Map<String, dynamic>>> listMembers({String state = 'all'}) async {
+    final r = await http.get(_u('/v1/members?state=$state'), headers: _headers());
+    final data = await _decode(r) as Map<String, dynamic>;
+    return (data['members'] as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> approveMember(String id) async {
+    await _decode(await http.post(_u('/v1/members/$id/approve'), headers: _headers()));
+  }
+
+  Future<void> rejectMember(String id) async {
+    await _decode(await http.post(_u('/v1/members/$id/reject'), headers: _headers()));
+  }
+
+  Future<void> setMemberNotifications(String id,
+      {bool? emailEnabled, bool? smsEnabled, String? role}) async {
+    final body = <String, dynamic>{};
+    if (emailEnabled != null) body['email_enabled'] = emailEnabled;
+    if (smsEnabled != null) body['sms_enabled'] = smsEnabled;
+    if (role != null) body['role'] = role;
+    await _decode(await http.put(_u('/v1/members/$id/notifications'),
+        headers: _headers(), body: jsonEncode(body)));
   }
 
   /// Request an emailed reset code. Returns normally even for an unknown email

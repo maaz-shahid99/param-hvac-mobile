@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import 'forgot_password_page.dart';
 
-/// Email/password sign-in against the AWS Cloud Server, with a register mode
-/// (bootstrap a tenant) and a one-time cloud-URL setup. Animated entrance.
+enum _Mode { signIn, createOrg, joinOrg }
+
+/// Sign in / create an organization (admin) / join an existing org by code
+/// (member) against the Cloud Server, with a one-time cloud-URL setup.
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -17,7 +19,10 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   final _password = TextEditingController();
   final _tenant = TextEditingController();
   final _bootstrap = TextEditingController();
-  bool _registerMode = false;
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  final _orgCode = TextEditingController();
+  _Mode _mode = _Mode.signIn;
   bool _busy = false;
   bool _obscure = true;
 
@@ -33,6 +38,9 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     _password.dispose();
     _tenant.dispose();
     _bootstrap.dispose();
+    _name.dispose();
+    _phone.dispose();
+    _orgCode.dispose();
     super.dispose();
   }
 
@@ -43,13 +51,31 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       if (auth.baseUrl.isEmpty) return;
     }
     setState(() => _busy = true);
-    final ok = _registerMode
-        ? await auth.register(
-            bootstrapToken: _bootstrap.text.trim(),
-            tenantName: _tenant.text.trim(),
-            email: _email.text.trim(),
-            password: _password.text)
-        : await auth.login(_email.text.trim(), _password.text);
+    bool ok;
+    switch (_mode) {
+      case _Mode.signIn:
+        ok = await auth.login(_email.text.trim(), _password.text);
+        break;
+      case _Mode.createOrg:
+        ok = await auth.register(
+          bootstrapToken: _bootstrap.text.trim(),
+          tenantName: _tenant.text.trim(),
+          name: _name.text.trim(),
+          email: _email.text.trim(),
+          phone: _phone.text.trim(),
+          password: _password.text,
+        );
+        break;
+      case _Mode.joinOrg:
+        ok = await auth.join(
+          orgCode: _orgCode.text.trim().toUpperCase(),
+          name: _name.text.trim(),
+          email: _email.text.trim(),
+          phone: _phone.text.trim(),
+          password: _password.text,
+        );
+        break;
+    }
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok && auth.error != null) {
@@ -68,7 +94,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
           controller: controller,
           keyboardType: TextInputType.url,
           decoration: const InputDecoration(
-            hintText: 'https://api.yourdomain.com',
+            hintText: 'http://<server-ip>:8002',
             labelText: 'Base URL',
           ),
         ),
@@ -85,12 +111,24 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     }
   }
 
+  String get _title => switch (_mode) {
+        _Mode.signIn => 'Sign in',
+        _Mode.createOrg => 'Create organization',
+        _Mode.joinOrg => 'Join organization',
+      };
+
+  String get _cta => switch (_mode) {
+        _Mode.signIn => 'Sign in',
+        _Mode.createOrg => 'Create & sign in',
+        _Mode.joinOrg => 'Request to join',
+      };
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_registerMode ? 'Create organization' : 'Sign in'),
+        title: Text(_title),
         actions: [
           IconButton(
             tooltip: 'Cloud server URL',
@@ -119,24 +157,30 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineSmall),
                     const SizedBox(height: 28),
-                    if (_registerMode) ...[
-                      TextField(
-                        controller: _tenant,
-                        decoration: const InputDecoration(
-                          labelText: 'Organization name',
-                          prefixIcon: Icon(Icons.business_outlined),
-                        ),
-                      ),
+
+                    // --- org identity (create vs join) ---
+                    if (_mode == _Mode.createOrg) ...[
+                      _field(_tenant, 'Organization name', Icons.business_outlined),
                       const SizedBox(height: 14),
-                      TextField(
-                        controller: _bootstrap,
-                        decoration: const InputDecoration(
-                          labelText: 'Bootstrap token',
-                          prefixIcon: Icon(Icons.vpn_key_outlined),
-                        ),
-                      ),
+                      _field(_bootstrap, 'Bootstrap token', Icons.vpn_key_outlined),
                       const SizedBox(height: 14),
                     ],
+                    if (_mode == _Mode.joinOrg) ...[
+                      _field(_orgCode, 'Organization code', Icons.qr_code_2_outlined,
+                          caps: true),
+                      const SizedBox(height: 14),
+                    ],
+
+                    // --- person (register/join) ---
+                    if (_mode != _Mode.signIn) ...[
+                      _field(_name, 'Your name', Icons.person_outline),
+                      const SizedBox(height: 14),
+                      _field(_phone, 'Phone (for SMS alerts)', Icons.phone_outlined,
+                          keyboard: TextInputType.phone),
+                      const SizedBox(height: 14),
+                    ],
+
+                    // --- credentials ---
                     TextField(
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
@@ -170,20 +214,21 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                             ? const SizedBox(
                                 height: 20, width: 20,
                                 child: CircularProgressIndicator(strokeWidth: 2))
-                            : Text(_registerMode ? 'Create & sign in' : 'Sign in'),
+                            : Text(_cta),
                       ),
                     ),
                     const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() => _registerMode = !_registerMode),
-                      child: Text(_registerMode
-                          ? 'Have an account? Sign in'
-                          : 'Set up a new organization'),
-                    ),
-                    // Forgot password (sign-in mode only) — email-OTP reset flow.
-                    if (!_registerMode)
+
+                    // --- mode switches ---
+                    if (_mode == _Mode.signIn) ...[
+                      TextButton(
+                        onPressed: _busy ? null : () => setState(() => _mode = _Mode.joinOrg),
+                        child: const Text('Join an organization with a code'),
+                      ),
+                      TextButton(
+                        onPressed: _busy ? null : () => setState(() => _mode = _Mode.createOrg),
+                        child: const Text('Set up a new organization (admin)'),
+                      ),
                       TextButton(
                         onPressed: _busy
                             ? null
@@ -196,6 +241,11 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                 ),
                         child: const Text('Forgot password?'),
                       ),
+                    ] else
+                      TextButton(
+                        onPressed: _busy ? null : () => setState(() => _mode = _Mode.signIn),
+                        child: const Text('Have an account? Sign in'),
+                      ),
                   ],
                 ),
               ),
@@ -203,6 +253,16 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
           ),
         ),
       ),
+    );
+  }
+
+  Widget _field(TextEditingController c, String label, IconData icon,
+      {TextInputType? keyboard, bool caps = false}) {
+    return TextField(
+      controller: c,
+      keyboardType: keyboard,
+      textCapitalization: caps ? TextCapitalization.characters : TextCapitalization.none,
+      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
     );
   }
 }
