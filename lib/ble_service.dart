@@ -135,10 +135,10 @@ class BLEService extends ChangeNotifier {
   final List<String> _nodesAccumulator = [];
   bool _collectingNodes = false;
 
-  // --- Live router list (ROUTERS? -> mesh routers the gateway currently sees) ---
-  List<String> _liveRouters = [];
-  final List<String> _routersAccumulator = [];
-  bool _collectingRouters = false;
+  // --- Live mesh nodes (ROUTERS? -> C6 gateways+routers; eui -> role 'G'/'R') ---
+  Map<String, String> _meshNodes = {};
+  final Map<String, String> _meshAccumulator = {};
+  bool _collectingMesh = false;
 
   // Getters
   bool get isScanning => _isScanning;
@@ -153,7 +153,7 @@ class BLEService extends ChangeNotifier {
   SystemStatus? get systemStatus => _systemStatus;
   String get otaStatus => _otaStatus;
   List<String> get liveNodes => List.unmodifiable(_liveNodes);
-  List<String> get liveRouters => List.unmodifiable(_liveRouters);
+  Map<String, String> get meshNodes => Map.unmodifiable(_meshNodes);
 
   BLEService() {
     _initializeSecretKey();
@@ -502,26 +502,26 @@ class BLEService extends ChangeNotifier {
         return;
       }
 
-      // 1d-3. Live router list (chunked): ROUTERS_BEGIN / ROUTER|<eui> / ROUTERS_END.
+      // 1d-3. Mesh node list (chunked): ROUTERS_BEGIN / ROUTER|<eui>|<G|R> / ROUTERS_END.
       if (line == 'ROUTERS_BEGIN') {
-        _collectingRouters = true;
-        _routersAccumulator.clear();
+        _collectingMesh = true;
+        _meshAccumulator.clear();
         return;
       }
       if (line == 'ROUTERS_END') {
-        _collectingRouters = false;
-        _liveRouters = List<String>.from(_routersAccumulator);
-        _addLog('🧭 ${_liveRouters.length} mesh router(s)');
+        _collectingMesh = false;
+        _meshNodes = Map<String, String>.from(_meshAccumulator);
+        _addLog('🧭 ${_meshNodes.length} mesh node(s)');
         notifyListeners();
         return;
       }
       if (line.startsWith('ROUTER|')) {
-        final eui = line.substring(7).trim().toLowerCase();
-        if (eui.isNotEmpty && !_routersAccumulator.contains(eui)) {
-          _routersAccumulator.add(eui);
-        }
-        if (!_collectingRouters) {
-          _liveRouters = List<String>.from(_routersAccumulator);
+        final parts = line.substring(7).split('|');
+        final eui = parts[0].trim().toLowerCase();
+        final role = parts.length > 1 ? parts[1].trim() : 'R';
+        if (eui.isNotEmpty) _meshAccumulator[eui] = role;
+        if (!_collectingMesh) {
+          _meshNodes = Map<String, String>.from(_meshAccumulator);
           notifyListeners();
         }
         return;

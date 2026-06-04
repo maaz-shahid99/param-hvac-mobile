@@ -116,27 +116,38 @@ class _DevicesPageState extends State<DevicesPage> {
       });
     final onlineCount = sensors.where((d) => d.online).length;
 
-    // ---- build the router list (cloud /v1/routers ∪ gateway ROUTERS?) ----
-    final liveR = ble.liveRouters.map((e) => e.toLowerCase()).toSet();
-    final routerByEui = <String, _Dev>{};
+    // ---- build the mesh-node list (C6 gateways + routers) ----
+    // Sources: cloud /v1/routers (kind + online, works without BLE) ∪ the
+    // connected gateway's ROUTERS? roster (eui -> role, live now). Role 'G' =
+    // active gateway, 'R' = router — the 'G' moves on failover, so this view
+    // self-updates.
+    final meshBle = ble.meshNodes; // eui(lower) -> 'G'/'R'
+    String roleLabel(String role) => role == 'G' ? 'Gateway' : 'Router';
+    final meshByEui = <String, _Dev>{};
     for (final r in _cloudRouters) {
       final eui = (r['eui'] ?? '').toString().toLowerCase();
       if (eui.isEmpty) continue;
       final ls = (r['last_seen'] is num) ? (r['last_seen'] as num).toDouble() : 0.0;
-      final d = _Dev(eui: eui, label: 'Router')
+      final role = ((r['kind'] ?? 'router').toString() == 'gateway') ? 'G' : 'R';
+      meshByEui[eui] = _Dev(eui: eui, label: roleLabel(role))
+        ..role = role
         ..lastSeen = ls
-        ..online = (r['online'] == true) || liveR.contains(eui);
-      routerByEui[eui] = d;
+        ..online = (r['online'] == true) || meshBle.containsKey(eui);
     }
-    for (final eui in liveR) {
-      routerByEui.putIfAbsent(eui, () => _Dev(eui: eui, label: 'Router')..online = true);
-    }
-    final routers = routerByEui.values.toList()
+    meshBle.forEach((eui, role) {
+      final d = meshByEui[eui] ?? _Dev(eui: eui, label: roleLabel(role));
+      d.role = role;
+      d.label = roleLabel(role);
+      d.online = true; // present in the live BLE roster -> online now
+      meshByEui[eui] = d;
+    });
+    final mesh = meshByEui.values.toList()
       ..sort((a, b) {
+        if (a.role != b.role) return a.role == 'G' ? -1 : 1; // gateways first
         if (a.online != b.online) return a.online ? -1 : 1;
         return a.eui.compareTo(b.eui);
       });
-    final routersOnline = routers.where((d) => d.online).length;
+    final meshOnline = mesh.where((d) => d.online).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -150,20 +161,20 @@ class _DevicesPageState extends State<DevicesPage> {
         child: ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            _sectionTitle('Gateway'),
+            _sectionTitle('Gateway (connected)'),
             _gatewayCard(ble),
-            _sectionTitle('Routers  ($routersOnline/${routers.length} online)'),
-            if (routers.isEmpty)
+            _sectionTitle('Mesh nodes  ($meshOnline/${mesh.length} online)'),
+            if (mesh.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'No routers in the mesh yet. Commission a router — it joins the '
-                  'network and appears here (sensors relay through routers).',
+                  'No mesh nodes reported yet. The active gateway and any routers '
+                  'appear here once the gateway C6 reports the roster.',
                   style: TextStyle(color: Colors.grey),
                 ),
               )
             else
-              ...routers.map(_sensorTile),
+              ...mesh.map(_meshTile),
             _sectionTitle('Sensors  ($onlineCount/${sensors.length} online)'),
             if (_loading && sensors.isEmpty)
               const Padding(
@@ -278,6 +289,35 @@ class _DevicesPageState extends State<DevicesPage> {
     );
   }
 
+  Widget _meshTile(_Dev d) {
+    final isGw = d.role == 'G';
+    final subtitle = StringBuffer(d.eui);
+    if (d.lastSeen != null && d.lastSeen! > 0) {
+      subtitle.write('  ·  ${_ago((_nowSec - d.lastSeen!).round())}');
+    }
+    return Card(
+      child: ListTile(
+        leading: _statusDot(d.online),
+        title: Row(children: [
+          Icon(isGw ? Icons.dns : Icons.settings_input_antenna,
+              size: 16, color: isGw ? Colors.indigo : Colors.blueGrey),
+          const SizedBox(width: 6),
+          Text(isGw ? 'Gateway (active)' : 'Router',
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+        ]),
+        subtitle: Text(subtitle.toString(),
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+        trailing: Text(
+          d.online ? 'ONLINE' : 'OFFLINE',
+          style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: d.online ? Colors.green : Colors.grey),
+        ),
+      ),
+    );
+  }
+
   String _ago(int s) {
     if (s < 60) return '${s}s ago';
     if (s < 3600) return '${s ~/ 60}m ago';
@@ -291,5 +331,6 @@ class _Dev {
   String label;
   double? lastSeen;
   bool online = false;
+  String role = ''; // 'G' = gateway, 'R' = router (mesh nodes only)
   _Dev({required this.eui, required this.label});
 }
