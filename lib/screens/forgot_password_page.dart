@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 
@@ -89,6 +90,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (ok) {
+      // Let the OS password manager update the saved password for this account.
+      TextInput.finishAutofillContext(shouldSave: true);
       Navigator.pop(context);
       _toast('Password changed — sign in with your new password.');
     } else {
@@ -119,6 +122,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               controller: _email,
               enabled: !_codeSent,
               keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.username, AutofillHints.email],
               decoration: const InputDecoration(
                 labelText: 'Email',
                 prefixIcon: Icon(Icons.email_outlined),
@@ -149,6 +153,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               TextField(
                 controller: _password,
                 obscureText: _obscure,
+                autofillHints: const [AutofillHints.newPassword],
                 decoration: InputDecoration(
                   labelText: 'New password',
                   prefixIcon: const Icon(Icons.lock_outline),

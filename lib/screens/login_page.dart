@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import 'forgot_password_page.dart';
@@ -7,6 +8,10 @@ enum _Mode { signIn, createOrg, joinOrg }
 
 /// Sign in / create an organization (admin) / join an existing org by code
 /// (member) against the Cloud Server, with a one-time cloud-URL setup.
+///
+/// The form is an [AutofillGroup] and commits the autofill context on success,
+/// so the OS password manager (Google Password Manager / Samsung Pass / etc.)
+/// offers to save and later auto-fill the credentials.
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -78,7 +83,11 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     }
     if (!mounted) return;
     setState(() => _busy = false);
-    if (!ok && auth.error != null) {
+    if (ok) {
+      // Tell the OS password manager to save these credentials.
+      TextInput.finishAutofillContext(shouldSave: true);
+    } else if (auth.error != null) {
+      TextInput.finishAutofillContext(shouldSave: false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(auth.error!)));
     }
   }
@@ -126,6 +135,11 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // New credentials (create/join) should offer to SAVE a new password;
+    // signing in fills an existing one.
+    final passwordHints = _mode == _Mode.signIn
+        ? const [AutofillHints.password]
+        : const [AutofillHints.newPassword];
     return Scaffold(
       appBar: AppBar(
         title: Text(_title),
@@ -147,106 +161,110 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                   .animate(CurvedAnimation(parent: _intro, curve: Curves.easeOut)),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Icon(Icons.thermostat, size: 64, color: scheme.primary),
-                    const SizedBox(height: 12),
-                    Text('HVAC Monitor',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 28),
+                child: AutofillGroup(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Icon(Icons.thermostat, size: 64, color: scheme.primary),
+                      const SizedBox(height: 12),
+                      Text('HVAC Monitor',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineSmall),
+                      const SizedBox(height: 28),
 
-                    // --- org identity (create vs join) ---
-                    if (_mode == _Mode.createOrg) ...[
-                      _field(_tenant, 'Organization name', Icons.business_outlined),
-                      const SizedBox(height: 14),
-                      _field(_bootstrap, 'Bootstrap token', Icons.vpn_key_outlined),
-                      const SizedBox(height: 14),
-                    ],
-                    if (_mode == _Mode.joinOrg) ...[
-                      _field(_orgCode, 'Organization code', Icons.qr_code_2_outlined,
-                          caps: true),
-                      const SizedBox(height: 14),
-                    ],
+                      // --- org identity (create vs join) ---
+                      if (_mode == _Mode.createOrg) ...[
+                        _field(_tenant, 'Organization name', Icons.business_outlined),
+                        const SizedBox(height: 14),
+                        _field(_bootstrap, 'Bootstrap token', Icons.vpn_key_outlined),
+                        const SizedBox(height: 14),
+                      ],
+                      if (_mode == _Mode.joinOrg) ...[
+                        _field(_orgCode, 'Organization code', Icons.qr_code_2_outlined,
+                            caps: true),
+                        const SizedBox(height: 14),
+                      ],
 
-                    // --- person (register/join) ---
-                    if (_mode != _Mode.signIn) ...[
-                      _field(_name, 'Your name', Icons.person_outline),
-                      const SizedBox(height: 14),
-                      _field(_phone, 'Phone (for SMS alerts)', Icons.phone_outlined,
-                          keyboard: TextInputType.phone),
-                      const SizedBox(height: 14),
-                    ],
+                      // --- person (register/join) ---
+                      if (_mode != _Mode.signIn) ...[
+                        _field(_name, 'Your name', Icons.person_outline,
+                            autofill: const [AutofillHints.name]),
+                        const SizedBox(height: 14),
+                        _field(_phone, 'Phone (for SMS alerts)', Icons.phone_outlined,
+                            keyboard: TextInputType.phone,
+                            autofill: const [AutofillHints.telephoneNumber]),
+                        const SizedBox(height: 14),
+                      ],
 
-                    // --- credentials ---
-                    TextField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _password,
-                      obscureText: _obscure,
-                      autofillHints: const [AutofillHints.password],
-                      onSubmitted: (_) => _submit(),
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _obscure = !_obscure),
+                      // --- credentials ---
+                      TextField(
+                        controller: _email,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.username, AutofillHints.email],
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          prefixIcon: Icon(Icons.email_outlined),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _busy ? null : _submit,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: _busy
-                            ? const SizedBox(
-                                height: 20, width: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2))
-                            : Text(_cta),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _password,
+                        obscureText: _obscure,
+                        autofillHints: passwordHints,
+                        onSubmitted: (_) => _submit(),
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                            onPressed: () => setState(() => _obscure = !_obscure),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 24),
+                      FilledButton(
+                        onPressed: _busy ? null : _submit,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: _busy
+                              ? const SizedBox(
+                                  height: 20, width: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2))
+                              : Text(_cta),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
 
-                    // --- mode switches ---
-                    if (_mode == _Mode.signIn) ...[
-                      TextButton(
-                        onPressed: _busy ? null : () => setState(() => _mode = _Mode.joinOrg),
-                        child: const Text('Join an organization with a code'),
-                      ),
-                      TextButton(
-                        onPressed: _busy ? null : () => setState(() => _mode = _Mode.createOrg),
-                        child: const Text('Set up a new organization (admin)'),
-                      ),
-                      TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ForgotPasswordPage(
-                                        initialEmail: _email.text.trim()),
+                      // --- mode switches ---
+                      if (_mode == _Mode.signIn) ...[
+                        TextButton(
+                          onPressed: _busy ? null : () => setState(() => _mode = _Mode.joinOrg),
+                          child: const Text('Join an organization with a code'),
+                        ),
+                        TextButton(
+                          onPressed: _busy ? null : () => setState(() => _mode = _Mode.createOrg),
+                          child: const Text('Set up a new organization (admin)'),
+                        ),
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ForgotPasswordPage(
+                                          initialEmail: _email.text.trim()),
+                                    ),
                                   ),
-                                ),
-                        child: const Text('Forgot password?'),
-                      ),
-                    ] else
-                      TextButton(
-                        onPressed: _busy ? null : () => setState(() => _mode = _Mode.signIn),
-                        child: const Text('Have an account? Sign in'),
-                      ),
-                  ],
+                          child: const Text('Forgot password?'),
+                        ),
+                      ] else
+                        TextButton(
+                          onPressed: _busy ? null : () => setState(() => _mode = _Mode.signIn),
+                          child: const Text('Have an account? Sign in'),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -257,10 +275,11 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   }
 
   Widget _field(TextEditingController c, String label, IconData icon,
-      {TextInputType? keyboard, bool caps = false}) {
+      {TextInputType? keyboard, bool caps = false, List<String>? autofill}) {
     return TextField(
       controller: c,
       keyboardType: keyboard,
+      autofillHints: autofill,
       textCapitalization: caps ? TextCapitalization.characters : TextCapitalization.none,
       decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
     );
