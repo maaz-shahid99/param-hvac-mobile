@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -121,8 +122,11 @@ class _AuthGateState extends State<_AuthGate> {
           case AuthStatus.signedIn:
             // A member whose join request hasn't been approved waits here.
             if (auth.isPending) return const PendingPage();
-            // Admins get the installer home; members get the monitoring home.
-            return auth.isAdmin
+            // The installer home needs Bluetooth, so it's mobile-only: on the
+            // web (and for all members) use the cloud-only home. Admins on the
+            // web still manage members/thresholds/layout via the drawer; the
+            // BLE commissioning flow stays on the phone app.
+            return (auth.isAdmin && !kIsWeb)
                 ? HomePage(onToggleTheme: widget.onToggleTheme)
                 : MemberHomePage(onToggleTheme: widget.onToggleTheme);
         }

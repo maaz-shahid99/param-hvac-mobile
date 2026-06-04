@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../ble_service.dart';
@@ -59,8 +60,8 @@ class AppDrawer extends StatelessWidget {
                 builder: (context, auth, _) => ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    // Diagnostics (Bluetooth) — admin/installer only.
-                    if (auth.isAdmin)
+                    // Diagnostics (Bluetooth) — admin/installer only, mobile only.
+                    if (auth.isAdmin && !kIsWeb)
                       Consumer<BLEService>(
                         builder: (context, ble, _) => _item(
                           context,
@@ -88,8 +89,9 @@ class AppDrawer extends StatelessWidget {
                         icon: Icons.group_outlined,
                         label: 'Members',
                         page: const MembersPage()),
-                    // Admin-only installer tools.
-                    if (auth.isAdmin) ...[
+                    // Admin-only installer tools — need a connected bridge, so
+                    // they're hidden on the web.
+                    if (auth.isAdmin && !kIsWeb) ...[
                       _item(context,
                           icon: Icons.tune,
                           label: 'System / Manage',
