@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_api.dart';
+import '../widgets/monitoring_cards.dart';
 
 /// The customer-facing product surface: open overheat alerts, live temperatures,
 /// and the threshold controls — all served by the AWS Cloud Server.
@@ -149,57 +150,14 @@ class _AlertsThresholdsPageState extends State<AlertsThresholdsPage> {
                         title: Text(_error!),
                       ),
                     ),
-                  _alertsCard(),
+                  OpenAlertsCard(alerts: _alerts, onAck: _ack),
                   const SizedBox(height: 12),
                   _thresholdsCard(isAdmin),
                   const SizedBox(height: 12),
-                  _liveCard(),
+                  LiveTempsCard(sensors: _sensors, highLimit: _defHigh),
                 ],
               ),
             ),
-    );
-  }
-
-  Widget _alertsCard() {
-    return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const ListTile(
-            leading: Icon(Icons.notifications_active_outlined),
-            title: Text('Open alerts'),
-          ),
-          if (_alerts.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Text('No open alerts. All racks within limits.'),
-            )
-          else
-            ..._alerts.map((a) => _alertTile(a as Map<String, dynamic>)),
-        ],
-      ),
-    );
-  }
-
-  Widget _alertTile(Map<String, dynamic> a) {
-    final kind = a['kind'] as String;
-    final icon = kind == 'stale'
-        ? Icons.sensors_off
-        : (kind == 'delta' ? Icons.compare_arrows : Icons.local_fire_department);
-    final scheme = Theme.of(context).colorScheme;
-    final acked = a['state'] == 'acked';
-    final value = (a['value'] as num).toDouble();
-    final thr = (a['threshold'] as num).toDouble();
-    final subtitle = kind == 'stale'
-        ? 'Sensor stopped reporting'
-        : '${value.toStringAsFixed(1)}°C (limit ${thr.toStringAsFixed(1)}°C)';
-    return ListTile(
-      leading: Icon(icon, color: acked ? scheme.outline : scheme.error),
-      title: Text(a['location'] as String? ?? ''),
-      subtitle: Text(subtitle),
-      trailing: acked
-          ? const Chip(label: Text('acked'))
-          : TextButton(onPressed: () => _ack(a['id'] as String), child: const Text('ACK')),
     );
   }
 
@@ -254,44 +212,6 @@ class _AlertsThresholdsPageState extends State<AlertsThresholdsPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _liveCard() {
-    final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
-    return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const ListTile(
-            leading: Icon(Icons.thermostat_auto),
-            title: Text('Live temperatures'),
-          ),
-          if (_sensors.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Text('No readings yet. Once the gateway posts, sensors appear here.'),
-            )
-          else
-            ..._sensors.map((s) {
-              final m = s as Map<String, dynamic>;
-              final maxc = (m['max_c'] as num).toDouble();
-              final ago = (now - (m['ts'] as num).toDouble()).clamp(0, 1e9).round();
-              final loc = (m['location'] as String?)?.isNotEmpty == true
-                  ? m['location'] as String
-                  : (m['eui'] as String);
-              return ListTile(
-                dense: true,
-                leading: Text('${maxc.toStringAsFixed(1)}°',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: maxc >= _defHigh ? Theme.of(context).colorScheme.error : null)),
-                title: Text(loc),
-                subtitle: Text('${ago}s ago • slot ${m['slot']}'),
-              );
-            }),
-        ],
       ),
     );
   }

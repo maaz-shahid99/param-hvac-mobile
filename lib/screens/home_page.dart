@@ -4,14 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../ble_service.dart';
 import 'onboarding_screen.dart';
-import 'settings_page.dart';
-import 'diagnostics_page.dart';
-import 'system_page.dart';
-import 'rack_layout_page.dart';
-import 'alerts_thresholds_page.dart';
-import 'members_page.dart';
-import '../services/auth_service.dart';
 import 'qr_scanner_page.dart';
+import '../widgets/app_drawer.dart';
 import '../widgets/assign_sensor_dialog.dart';
 import '../widgets/connection_status_card.dart';
 import '../widgets/disconnected_view.dart';
@@ -19,8 +13,6 @@ import '../widgets/quick_actions_card.dart';
 import '../utils/auth_guard.dart';
 import '../widgets/qr_scan_button.dart';
 import '../widgets/commission_history_card.dart';
-import 'console_page.dart';
-import 'devices_page.dart';
 import '../widgets/bridge_auth_card.dart';
 import '../widgets/device_scanner_sheet.dart';
 
@@ -123,124 +115,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     showAssignSensorDialog(context, presetEui: eui64);
   }
 
-  // Slide-out navigation drawer — replaces the old AppBar action icons.
-  Widget _buildDrawer(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Drawer(
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Header: app + signed-in user.
-            Consumer<AuthService>(
-              builder: (context, auth, _) => DrawerHeader(
-                margin: EdgeInsets.zero,
-                decoration: BoxDecoration(color: scheme.primaryContainer),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Icon(Icons.thermostat, size: 36, color: scheme.onPrimaryContainer),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Thread Commissioner',
-                            style: Theme.of(context).textTheme.titleMedium),
-                        if (auth.email.isNotEmpty)
-                          Text('${auth.email}  ·  ${auth.role}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: Consumer<AuthService>(
-                builder: (context, auth, _) => ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    // Diagnostics — icon reflects the live BLE connection.
-                    Consumer<BLEService>(
-                      builder: (context, ble, _) => _drawerItem(
-                        context,
-                        icon: ble.isConnected
-                            ? Icons.bluetooth_connected
-                            : Icons.bluetooth,
-                        iconColor: ble.isConnected ? Colors.green : null,
-                        label: 'Diagnostics',
-                        page: const DiagnosticsPage(),
-                      ),
-                    ),
-                    _drawerItem(context,
-                        icon: Icons.devices_other,
-                        label: 'Devices',
-                        page: const DevicesPage()),
-                    _drawerItem(context,
-                        icon: Icons.notifications_active_outlined,
-                        label: 'Alerts & Thresholds',
-                        page: const AlertsThresholdsPage()),
-                    _drawerItem(context,
-                        icon: Icons.view_module,
-                        label: 'Rack Layout',
-                        page: const RackLayoutPage()),
-                    // Members — visible to everyone; the page is read-only for
-                    // non-admins (no approve/reject or email/SMS toggles).
-                    _drawerItem(context,
-                        icon: Icons.group_outlined,
-                        label: 'Members',
-                        page: const MembersPage()),
-                    // Admin-only tools.
-                    if (auth.isAdmin) ...[
-                      _drawerItem(context,
-                          icon: Icons.tune,
-                          label: 'System / Manage',
-                          page: const SystemPage()),
-                      _drawerItem(context,
-                          icon: Icons.terminal,
-                          label: 'Console',
-                          page: const ConsolePage()),
-                    ],
-                    _drawerItem(context,
-                        icon: Icons.settings,
-                        label: 'Settings',
-                        page: SettingsPage(onToggleTheme: widget.onToggleTheme)),
-                  ],
-                ),
-              ),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Sign out'),
-              onTap: () {
-                Navigator.pop(context); // close the drawer
-                context.read<AuthService>().signOut();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  ListTile _drawerItem(BuildContext context,
-      {required IconData icon,
-      required String label,
-      required Widget page,
-      Color? iconColor}) {
-    return ListTile(
-      leading: Icon(icon, color: iconColor),
-      title: Text(label),
-      onTap: () {
-        Navigator.pop(context); // close the drawer first
-        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_showOnboarding) {
@@ -252,7 +126,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       appBar: AppBar(
         title: const Text('Thread Commissioner'),
       ),
-      drawer: _buildDrawer(context),
+      drawer: AppDrawer(onToggleTheme: widget.onToggleTheme),
       body: Consumer<BLEService>(
         builder: (context, bleService, _) {
 

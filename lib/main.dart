@@ -5,6 +5,7 @@ import 'ble_service.dart';
 import 'services/topology_service.dart';
 import 'services/auth_service.dart';
 import 'screens/home_page.dart';
+import 'screens/member_home_page.dart';
 import 'screens/login_page.dart';
 import 'screens/splash_page.dart';
 import 'screens/pending_page.dart';
@@ -120,7 +121,10 @@ class _AuthGateState extends State<_AuthGate> {
           case AuthStatus.signedIn:
             // A member whose join request hasn't been approved waits here.
             if (auth.isPending) return const PendingPage();
-            return HomePage(onToggleTheme: widget.onToggleTheme);
+            // Admins get the installer home; members get the monitoring home.
+            return auth.isAdmin
+                ? HomePage(onToggleTheme: widget.onToggleTheme)
+                : MemberHomePage(onToggleTheme: widget.onToggleTheme);
         }
       },
     );
