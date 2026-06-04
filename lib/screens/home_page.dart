@@ -19,7 +19,7 @@ import '../widgets/quick_actions_card.dart';
 import '../utils/auth_guard.dart';
 import '../widgets/qr_scan_button.dart';
 import '../widgets/commission_history_card.dart';
-import '../widgets/logs_section.dart';
+import 'console_page.dart';
 import '../widgets/bridge_auth_card.dart';
 import '../widgets/device_scanner_sheet.dart';
 
@@ -194,6 +194,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       label: 'System / Manage',
                       page: const SystemPage()),
                   _drawerItem(context,
+                      icon: Icons.terminal,
+                      label: 'Console',
+                      page: const ConsolePage()),
+                  _drawerItem(context,
                       icon: Icons.settings,
                       label: 'Settings',
                       page: SettingsPage(onToggleTheme: widget.onToggleTheme)),
@@ -319,7 +323,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                 ),
               ),
-              LogsSection(bleService: bleService),
             ],
           );
         },

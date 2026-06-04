@@ -9,45 +9,49 @@ class DisconnectedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
+    // Scroll when vertical space is tight (small screens / keyboard up) but
+    // stay centered when there's room — avoids the RenderFlex overflow.
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.bluetooth_disabled,
-              size: 80,
-              color: Colors.grey.withOpacity(0.5),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Bridge Disconnected',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.bluetooth_disabled,
+                size: 80,
+                color: Colors.grey.withValues(alpha: 0.5),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Ensure your Thread Bridge is powered on and within Bluetooth range.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 16),
-            ),
-            const SizedBox(height: 32),
-        // --- REPLACED: Now uses ActionChip to match Quick Actions ---
-        ActionChip(
-          avatar: const Icon(Icons.bluetooth_searching, size: 18),
-          label: const Text('Scan for Bridge'),
-          padding: const EdgeInsets.all(8),
-          onPressed: () {
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              builder: (context) => const DeviceScannerSheet(),
-            );
-          },
-        ),
-          ],
+              const SizedBox(height: 24),
+              Text(
+                'Bridge Disconnected',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Ensure your Thread Bridge is powered on and within Bluetooth range.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+              ),
+              const SizedBox(height: 32),
+              ActionChip(
+                avatar: const Icon(Icons.bluetooth_searching, size: 18),
+                label: const Text('Scan for Bridge'),
+                padding: const EdgeInsets.all(8),
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (context) => const DeviceScannerSheet(),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
