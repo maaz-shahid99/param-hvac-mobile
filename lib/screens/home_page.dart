@@ -122,6 +122,114 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     showAssignSensorDialog(context, presetEui: eui64);
   }
 
+  // Slide-out navigation drawer — replaces the old AppBar action icons.
+  Widget _buildDrawer(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Header: app + signed-in user.
+            Consumer<AuthService>(
+              builder: (context, auth, _) => DrawerHeader(
+                margin: EdgeInsets.zero,
+                decoration: BoxDecoration(color: scheme.primaryContainer),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(Icons.thermostat, size: 36, color: scheme.onPrimaryContainer),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Thread Commissioner',
+                            style: Theme.of(context).textTheme.titleMedium),
+                        if (auth.email.isNotEmpty)
+                          Text('${auth.email}  ·  ${auth.role}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  // Diagnostics — icon reflects the live BLE connection.
+                  Consumer<BLEService>(
+                    builder: (context, ble, _) => _drawerItem(
+                      context,
+                      icon: ble.isConnected
+                          ? Icons.bluetooth_connected
+                          : Icons.bluetooth,
+                      iconColor: ble.isConnected ? Colors.green : null,
+                      label: 'Diagnostics',
+                      page: const DiagnosticsPage(),
+                    ),
+                  ),
+                  _drawerItem(context,
+                      icon: Icons.notifications_active_outlined,
+                      label: 'Alerts & Thresholds',
+                      page: const AlertsThresholdsPage()),
+                  _drawerItem(context,
+                      icon: Icons.view_module,
+                      label: 'Rack Layout',
+                      page: const RackLayoutPage()),
+                  // Admin-only: members + who gets email/SMS alerts.
+                  Consumer<AuthService>(
+                    builder: (context, auth, _) => auth.isAdmin
+                        ? _drawerItem(context,
+                            icon: Icons.group_outlined,
+                            label: 'Members',
+                            page: const MembersPage())
+                        : const SizedBox.shrink(),
+                  ),
+                  _drawerItem(context,
+                      icon: Icons.tune,
+                      label: 'System / Manage',
+                      page: const SystemPage()),
+                  _drawerItem(context,
+                      icon: Icons.settings,
+                      label: 'Settings',
+                      page: SettingsPage(onToggleTheme: widget.onToggleTheme)),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Sign out'),
+              onTap: () {
+                Navigator.pop(context); // close the drawer
+                context.read<AuthService>().signOut();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  ListTile _drawerItem(BuildContext context,
+      {required IconData icon,
+      required String label,
+      required Widget page,
+      Color? iconColor}) {
+    return ListTile(
+      leading: Icon(icon, color: iconColor),
+      title: Text(label),
+      onTap: () {
+        Navigator.pop(context); // close the drawer first
+        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_showOnboarding) {
@@ -129,84 +237,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
 
     return Scaffold(
+      // The leading "hamburger" is added automatically because `drawer` is set.
       appBar: AppBar(
         title: const Text('Thread Commissioner'),
-        actions: [
-          Consumer<BLEService>(
-            builder: (context, bleService, _) => IconButton(
-              icon: Icon(
-                bleService.isConnected
-                    ? Icons.bluetooth_connected
-                    : Icons.bluetooth,
-                color: bleService.isConnected ? Colors.green : null,
-              ),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const DiagnosticsPage()),
-                );
-              },
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications_active_outlined),
-            tooltip: 'Alerts & Thresholds',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AlertsThresholdsPage()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.view_module),
-            tooltip: 'Rack Layout',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const RackLayoutPage()),
-              );
-            },
-          ),
-          // Admin-only: approve members + control who gets email/SMS alerts.
-          Consumer<AuthService>(
-            builder: (context, auth, _) => auth.isAdmin
-                ? IconButton(
-                    icon: const Icon(Icons.group_outlined),
-                    tooltip: 'Members',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const MembersPage()),
-                      );
-                    },
-                  )
-                : const SizedBox.shrink(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.tune),
-            tooltip: 'System / Manage',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SystemPage()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (context) =>
-                        SettingsPage(onToggleTheme: widget.onToggleTheme)),
-              );
-            },
-          ),
-        ],
       ),
+      drawer: _buildDrawer(context),
       body: Consumer<BLEService>(
         builder: (context, bleService, _) {
 
