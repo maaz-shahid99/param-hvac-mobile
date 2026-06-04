@@ -87,10 +87,19 @@
     <!--                 FLUTTER APPLICATION CONFIG                -->
     <!-- ========================================================= -->
 
+    <!-- allowBackup=false: never back up app data to Google's cloud, so the
+         saved JWT session token and prefs can't be restored onto another device
+         or survive a reinstall. dataExtractionRules/fullBackupContent reinforce
+         this on API 31+ / <=30 respectively. -->
+    <!-- TODO(prod): set usesCleartextTraffic="false" once the cloud is HTTPS
+         (kept true here only so local http://<PC-IP> bring-up works). -->
     <application
         android:label="thread_commissioner"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
