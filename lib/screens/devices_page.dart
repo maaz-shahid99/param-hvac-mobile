@@ -22,6 +22,7 @@ class DevicesPage extends StatefulWidget {
 class _DevicesPageState extends State<DevicesPage> {
   static const int _staleSeconds = 180; // matches the server's STALE_AFTER_S
   List<Map<String, dynamic>> _cloudSensors = [];
+  List<Map<String, dynamic>> _cloudRouters = [];
   bool _loading = true;
   Timer? _timer;
 
@@ -40,18 +41,22 @@ class _DevicesPageState extends State<DevicesPage> {
 
   Future<void> _refresh() async {
     final ble = context.read<BLEService>();
-    // Ask the connected gateway for fresh status + live node list.
+    // Ask the connected gateway for fresh status + live node/router lists.
     if (ble.isConnected) {
       ble.requestSystemStatus();
       ble.requestNodes();
+      ble.requestRouters();
     }
-    // Pull last-reading-per-sensor from the cloud (works without BLE).
+    // Pull last-reading-per-sensor + router roster from the cloud (no BLE needed).
     final auth = context.read<AuthService>();
     try {
       final s = await auth.api.currentTemps();
+      List<dynamic> rt = const [];
+      try { rt = await auth.api.routers(); } catch (_) {/* older server: no routers */}
       if (mounted) {
         setState(() {
           _cloudSensors = s.cast<Map<String, dynamic>>();
+          _cloudRouters = rt.cast<Map<String, dynamic>>();
           _loading = false;
         });
       }
@@ -111,6 +116,28 @@ class _DevicesPageState extends State<DevicesPage> {
       });
     final onlineCount = sensors.where((d) => d.online).length;
 
+    // ---- build the router list (cloud /v1/routers ∪ gateway ROUTERS?) ----
+    final liveR = ble.liveRouters.map((e) => e.toLowerCase()).toSet();
+    final routerByEui = <String, _Dev>{};
+    for (final r in _cloudRouters) {
+      final eui = (r['eui'] ?? '').toString().toLowerCase();
+      if (eui.isEmpty) continue;
+      final ls = (r['last_seen'] is num) ? (r['last_seen'] as num).toDouble() : 0.0;
+      final d = _Dev(eui: eui, label: 'Router')
+        ..lastSeen = ls
+        ..online = (r['online'] == true) || liveR.contains(eui);
+      routerByEui[eui] = d;
+    }
+    for (final eui in liveR) {
+      routerByEui.putIfAbsent(eui, () => _Dev(eui: eui, label: 'Router')..online = true);
+    }
+    final routers = routerByEui.values.toList()
+      ..sort((a, b) {
+        if (a.online != b.online) return a.online ? -1 : 1;
+        return a.eui.compareTo(b.eui);
+      });
+    final routersOnline = routers.where((d) => d.online).length;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Devices'),
@@ -123,8 +150,20 @@ class _DevicesPageState extends State<DevicesPage> {
         child: ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            _sectionTitle('Gateway / Router'),
+            _sectionTitle('Gateway'),
             _gatewayCard(ble),
+            _sectionTitle('Routers  ($routersOnline/${routers.length} online)'),
+            if (routers.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'No routers in the mesh yet. Commission a router — it joins the '
+                  'network and appears here (sensors relay through routers).',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else
+              ...routers.map(_sensorTile),
             _sectionTitle('Sensors  ($onlineCount/${sensors.length} online)'),
             if (_loading && sensors.isEmpty)
               const Padding(

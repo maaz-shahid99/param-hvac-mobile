@@ -190,6 +190,12 @@ class CloudApi {
     return (await _decode(r) as Map<String, dynamic>)['sensors'] as List<dynamic>;
   }
 
+  /// Mesh routers the gateway has reported, each with `online` + `last_seen`.
+  Future<List<dynamic>> routers() async {
+    final r = await http.get(_u('/v1/routers'), headers: _headers());
+    return (await _decode(r) as Map<String, dynamic>)['routers'] as List<dynamic>;
+  }
+
   Future<List<dynamic>> alerts({String state = 'open'}) async {
     final r = await http.get(_u('/v1/alerts?state=$state'), headers: _headers());
     return (await _decode(r) as Map<String, dynamic>)['alerts'] as List<dynamic>;

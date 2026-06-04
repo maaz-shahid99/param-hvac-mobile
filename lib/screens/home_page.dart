@@ -101,18 +101,76 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       );
 
-      // On success, let the installer assign the sensor's physical box/slot so
-      // it maps to the right dashboard tile (sends MAP|eui|box|slot).
+      // On success, figure out WHAT we just added: a sensor gets the rack
+      // assignment dialog; a router just joins the mesh and needs nothing.
       if (success && mounted) {
-        _promptSensorMapping(context, eui64);
+        _classifyAndAssign(context, eui64);
       }
     }
   }
 
-  // After a successful commission, let the installer pick this sensor's
-  // physical location from the configured rack layout (device is pre-selected).
-  void _promptSensorMapping(BuildContext context, String eui64) {
-    showAssignSensorDialog(context, presetEui: eui64);
+  // Auto-detect device type from the mesh role (the user's chosen flow): a
+  // sensor starts reporting (shows up in NODES?), a router appears in the C6
+  // leader's neighbour roster (ROUTERS?). Only sensors get rack assignment.
+  Future<void> _classifyAndAssign(BuildContext context, String eui64) async {
+    final ble = Provider.of<BLEService>(context, listen: false);
+    final target = eui64.toLowerCase();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(children: [
+          SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
+          SizedBox(width: 16),
+          Expanded(child: Text('Identifying device on the mesh…')),
+        ]),
+      ),
+    );
+
+    String? kind; // 'sensor' | 'router'
+    for (int i = 0; i < 10 && mounted; i++) {
+      if (ble.isConnected) {
+        ble.requestNodes();
+        ble.requestRouters();
+      }
+      await Future.delayed(const Duration(seconds: 3));
+      if (ble.liveRouters.map((e) => e.toLowerCase()).contains(target)) { kind = 'router'; break; }
+      if (ble.liveNodes.map((e) => e.toLowerCase()).contains(target)) { kind = 'sensor'; break; }
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // close the "identifying" dialog
+
+    if (kind == 'router') {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('🧭 Router joined the mesh — no rack assignment needed.')));
+      return;
+    }
+    if (kind == 'sensor') {
+      showAssignSensorDialog(context, presetEui: eui64);
+      return;
+    }
+
+    // Couldn't classify in time — ask, so we never wrongly force a router into
+    // rack assignment.
+    final isRouter = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('What did you add?'),
+        content: const Text("Couldn't auto-detect the device type yet. Is this a sensor or a router?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Sensor')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Router')),
+        ],
+      ),
+    );
+    if (!mounted || isRouter == null) return;
+    if (isRouter) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Router added.')));
+    } else {
+      showAssignSensorDialog(context, presetEui: eui64);
+    }
   }
 
   @override

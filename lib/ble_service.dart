@@ -135,6 +135,11 @@ class BLEService extends ChangeNotifier {
   final List<String> _nodesAccumulator = [];
   bool _collectingNodes = false;
 
+  // --- Live router list (ROUTERS? -> mesh routers the gateway currently sees) ---
+  List<String> _liveRouters = [];
+  final List<String> _routersAccumulator = [];
+  bool _collectingRouters = false;
+
   // Getters
   bool get isScanning => _isScanning;
   bool get isConnected => _isConnected;
@@ -148,6 +153,7 @@ class BLEService extends ChangeNotifier {
   SystemStatus? get systemStatus => _systemStatus;
   String get otaStatus => _otaStatus;
   List<String> get liveNodes => List.unmodifiable(_liveNodes);
+  List<String> get liveRouters => List.unmodifiable(_liveRouters);
 
   BLEService() {
     _initializeSecretKey();
@@ -496,6 +502,31 @@ class BLEService extends ChangeNotifier {
         return;
       }
 
+      // 1d-3. Live router list (chunked): ROUTERS_BEGIN / ROUTER|<eui> / ROUTERS_END.
+      if (line == 'ROUTERS_BEGIN') {
+        _collectingRouters = true;
+        _routersAccumulator.clear();
+        return;
+      }
+      if (line == 'ROUTERS_END') {
+        _collectingRouters = false;
+        _liveRouters = List<String>.from(_routersAccumulator);
+        _addLog('🧭 ${_liveRouters.length} mesh router(s)');
+        notifyListeners();
+        return;
+      }
+      if (line.startsWith('ROUTER|')) {
+        final eui = line.substring(7).trim().toLowerCase();
+        if (eui.isNotEmpty && !_routersAccumulator.contains(eui)) {
+          _routersAccumulator.add(eui);
+        }
+        if (!_collectingRouters) {
+          _liveRouters = List<String>.from(_routersAccumulator);
+          notifyListeners();
+        }
+        return;
+      }
+
       // 1e. Sensor → box/slot mapping result.
       if (line.startsWith('ACK MAP') || line.startsWith('ERR MAP')) {
         _addLog(line.startsWith('ACK') ? '✅ $line' : '❌ $line',
@@ -621,6 +652,14 @@ class BLEService extends ChangeNotifier {
     if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
     _addLog('Requesting live sensor list...');
     await _writeCommandWithRetry('NODES?');
+  }
+
+  /// Ask the bridge for the routers the C6 leader currently sees in the mesh
+  /// (ROUTERS?). The reply arrives async as ROUTERS_BEGIN / ROUTER|<eui> /
+  /// ROUTERS_END and populates [liveRouters].
+  Future<void> requestRouters() async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    await _writeCommandWithRetry('ROUTERS?');
   }
 
   /// Send a raw command to the bridge exactly as typed (unsigned), for the
