@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../ble_service.dart';
 import '../services/auth_service.dart';
+import '../app_version.dart';
 
 class SettingsPage extends StatelessWidget {
   final VoidCallback onToggleTheme;
@@ -86,8 +88,22 @@ class SettingsPage extends StatelessWidget {
             const Divider(),
             const ListTile(
               title: Text('About'),
-              subtitle: Text('Thread Commissioner v1.0.0'),
+              subtitle: Text('Thread Commissioner v$kAppVersion'),
               leading: Icon(Icons.info_outline),
+            ),
+            // Build tag — tap to copy. Bump kAppBuild on every change so you can
+            // confirm the installed build matches the latest code.
+            ListTile(
+              leading: const Icon(Icons.memory),
+              title: const Text('Build'),
+              subtitle: const Text(kAppBuild),
+              trailing: const Icon(Icons.copy, size: 18),
+              onTap: () {
+                Clipboard.setData(const ClipboardData(text: kAppBuild));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Build copied')),
+                );
+              },
             ),
           ],
         );
