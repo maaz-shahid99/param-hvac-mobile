@@ -20,6 +20,7 @@ import '../utils/auth_guard.dart';
 import '../widgets/qr_scan_button.dart';
 import '../widgets/commission_history_card.dart';
 import 'console_page.dart';
+import 'devices_page.dart';
 import '../widgets/bridge_auth_card.dart';
 import '../widgets/device_scanner_sheet.dart';
 
@@ -172,6 +173,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       page: const DiagnosticsPage(),
                     ),
                   ),
+                  _drawerItem(context,
+                      icon: Icons.devices_other,
+                      label: 'Devices',
+                      page: const DevicesPage()),
                   _drawerItem(context,
                       icon: Icons.notifications_active_outlined,
                       label: 'Alerts & Thresholds',

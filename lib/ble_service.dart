@@ -623,6 +623,18 @@ class BLEService extends ChangeNotifier {
     await _writeCommandWithRetry('NODES?');
   }
 
+  /// Send a raw command to the bridge exactly as typed (unsigned), for the
+  /// manual console. Most operational commands (SYS?, NODES?, commissioner_start,
+  /// FORM_NET, OTA_SELF, …) are unsigned; use commissionDevice/sendCustomCommand
+  /// for HMAC-signed ones like `add`.
+  Future<void> sendRawCommand(String command) async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    final cmd = command.trim();
+    if (cmd.isEmpty) return;
+    _addLog('» $cmd');
+    await _writeCommandWithRetry(cmd);
+  }
+
   Future<void> setCommissioner(bool enable) async {
     if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
     _addLog(enable ? 'Enabling commissioner...' : 'Disabling commissioner...');
