@@ -13,7 +13,9 @@ class SettingsPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: Consumer<BLEService>(
-        builder: (context, bleService, _) => ListView(
+        builder: (context, bleService, _) {
+          final isAdmin = context.watch<AuthService>().isAdmin;
+          return ListView(
           children: [
             SwitchListTile(
               title: const Text('Auto-Reconnect'),
@@ -27,33 +29,35 @@ class SettingsPage extends StatelessWidget {
               leading: const Icon(Icons.brightness_6),
               onTap: onToggleTheme,
             ),
-            // --- NEW: Change Bridge PIN ---
-            ListTile(
-              title: const Text('Change Bridge PIN'),
-              subtitle: const Text('Update the access PIN for the ESP32 Bridge'),
-              leading: const Icon(Icons.password),
-              onTap: () {
-                if (!bleService.isConnected) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Must be connected to change PIN')),
-                  );
-                  return;
-                }
-                if (bleService.authState != BridgeAuthState.authenticated) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please unlock the bridge first')),
-                  );
-                  return;
-                }
-                _showChangeBridgePinDialog(context, bleService);
-              },
-            ),
-            ListTile(
-              title: const Text('Update Secret Key'),
-              subtitle: const Text('Change HMAC signing key'),
-              leading: const Icon(Icons.key),
-              onTap: () => _showUpdateKeyDialog(context, bleService),
-            ),
+            // Bridge PIN + HMAC key are admin-only hardware controls.
+            if (isAdmin) ...[
+              ListTile(
+                title: const Text('Change Bridge PIN'),
+                subtitle: const Text('Update the access PIN for the ESP32 Bridge'),
+                leading: const Icon(Icons.password),
+                onTap: () {
+                  if (!bleService.isConnected) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Must be connected to change PIN')),
+                    );
+                    return;
+                  }
+                  if (bleService.authState != BridgeAuthState.authenticated) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please unlock the bridge first')),
+                    );
+                    return;
+                  }
+                  _showChangeBridgePinDialog(context, bleService);
+                },
+              ),
+              ListTile(
+                title: const Text('Update Secret Key'),
+                subtitle: const Text('Change HMAC signing key'),
+                leading: const Icon(Icons.key),
+                onTap: () => _showUpdateKeyDialog(context, bleService),
+              ),
+            ],
             ListTile(
               title: const Text('Clear History'),
               subtitle: const Text('Remove all commissioned device records'),
@@ -80,13 +84,14 @@ class SettingsPage extends StatelessWidget {
               ),
             ),
             const Divider(),
-            ListTile(
-              title: const Text('About'),
-              subtitle: const Text('Thread Commissioner v1.0.0'),
-              leading: const Icon(Icons.info_outline),
+            const ListTile(
+              title: Text('About'),
+              subtitle: Text('Thread Commissioner v1.0.0'),
+              leading: Icon(Icons.info_outline),
             ),
           ],
-        ),
+        );
+        },
       ),
     );
   }

@@ -71,8 +71,9 @@ class _MembersPageState extends State<MembersPage> {
                   child: ListView(
                     padding: const EdgeInsets.all(12),
                     children: [
-                      _orgCodeCard(auth.orgCode),
-                      if (pending.isNotEmpty) ...[
+                      // Inviting + approving are admin actions.
+                      if (auth.isAdmin) _orgCodeCard(auth.orgCode),
+                      if (auth.isAdmin && pending.isNotEmpty) ...[
                         _sectionTitle('Join requests (${pending.length})'),
                         ...pending.map(_pendingTile),
                       ],
@@ -152,9 +153,12 @@ class _MembersPageState extends State<MembersPage> {
 
   Widget _activeTile(Map<String, dynamic> m) {
     final api = context.read<AuthService>().api;
+    final viewerIsAdmin = context.read<AuthService>().isAdmin; // can this user edit?
     final id = m['id'] as String;
     final phone = (m['phone'] ?? '') as String;
-    final isAdmin = m['role'] == 'admin';
+    final isAdmin = m['role'] == 'admin'; // is the LISTED member an admin?
+    final emailOn = m['email_enabled'] == true;
+    final smsOn = m['sms_enabled'] == true;
     final label = (m['name'] as String?)?.isNotEmpty == true ? m['name'] : m['email'];
     return Card(
       child: Padding(
@@ -188,26 +192,46 @@ class _MembersPageState extends State<MembersPage> {
               ],
             ),
             const Divider(),
-            // Admin chooses who receives which alerts.
-            SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              secondary: const Icon(Icons.email_outlined),
-              title: const Text('Email alerts'),
-              value: m['email_enabled'] == true,
-              onChanged: (v) => _guard(() => api.setMemberNotifications(id, emailEnabled: v)),
-            ),
-            SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              secondary: const Icon(Icons.sms_outlined),
-              title: const Text('SMS alerts'),
-              subtitle: phone.isEmpty ? const Text('No phone number on file') : null,
-              value: m['sms_enabled'] == true,
-              onChanged: phone.isEmpty
-                  ? null
-                  : (v) => _guard(() => api.setMemberNotifications(id, smsEnabled: v)),
-            ),
+            // Admins toggle who receives which alerts; members see it read-only.
+            if (viewerIsAdmin) ...[
+              SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.email_outlined),
+                title: const Text('Email alerts'),
+                value: emailOn,
+                onChanged: (v) => _guard(() => api.setMemberNotifications(id, emailEnabled: v)),
+              ),
+              SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.sms_outlined),
+                title: const Text('SMS alerts'),
+                subtitle: phone.isEmpty ? const Text('No phone number on file') : null,
+                value: smsOn,
+                onChanged: phone.isEmpty
+                    ? null
+                    : (v) => _guard(() => api.setMemberNotifications(id, smsEnabled: v)),
+              ),
+            ] else
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (emailOn)
+                    const Chip(
+                        avatar: Icon(Icons.email_outlined, size: 16),
+                        label: Text('Email alerts'),
+                        visualDensity: VisualDensity.compact),
+                  if (smsOn)
+                    const Chip(
+                        avatar: Icon(Icons.sms_outlined, size: 16),
+                        label: Text('SMS alerts'),
+                        visualDensity: VisualDensity.compact),
+                  if (!emailOn && !smsOn)
+                    const Text('No alerts enabled',
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ),
           ],
         ),
       ),

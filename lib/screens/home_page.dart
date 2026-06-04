@@ -158,55 +158,57 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ),
             ),
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  // Diagnostics — icon reflects the live BLE connection.
-                  Consumer<BLEService>(
-                    builder: (context, ble, _) => _drawerItem(
-                      context,
-                      icon: ble.isConnected
-                          ? Icons.bluetooth_connected
-                          : Icons.bluetooth,
-                      iconColor: ble.isConnected ? Colors.green : null,
-                      label: 'Diagnostics',
-                      page: const DiagnosticsPage(),
+              child: Consumer<AuthService>(
+                builder: (context, auth, _) => ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    // Diagnostics — icon reflects the live BLE connection.
+                    Consumer<BLEService>(
+                      builder: (context, ble, _) => _drawerItem(
+                        context,
+                        icon: ble.isConnected
+                            ? Icons.bluetooth_connected
+                            : Icons.bluetooth,
+                        iconColor: ble.isConnected ? Colors.green : null,
+                        label: 'Diagnostics',
+                        page: const DiagnosticsPage(),
+                      ),
                     ),
-                  ),
-                  _drawerItem(context,
-                      icon: Icons.devices_other,
-                      label: 'Devices',
-                      page: const DevicesPage()),
-                  _drawerItem(context,
-                      icon: Icons.notifications_active_outlined,
-                      label: 'Alerts & Thresholds',
-                      page: const AlertsThresholdsPage()),
-                  _drawerItem(context,
-                      icon: Icons.view_module,
-                      label: 'Rack Layout',
-                      page: const RackLayoutPage()),
-                  // Admin-only: members + who gets email/SMS alerts.
-                  Consumer<AuthService>(
-                    builder: (context, auth, _) => auth.isAdmin
-                        ? _drawerItem(context,
-                            icon: Icons.group_outlined,
-                            label: 'Members',
-                            page: const MembersPage())
-                        : const SizedBox.shrink(),
-                  ),
-                  _drawerItem(context,
-                      icon: Icons.tune,
-                      label: 'System / Manage',
-                      page: const SystemPage()),
-                  _drawerItem(context,
-                      icon: Icons.terminal,
-                      label: 'Console',
-                      page: const ConsolePage()),
-                  _drawerItem(context,
-                      icon: Icons.settings,
-                      label: 'Settings',
-                      page: SettingsPage(onToggleTheme: widget.onToggleTheme)),
-                ],
+                    _drawerItem(context,
+                        icon: Icons.devices_other,
+                        label: 'Devices',
+                        page: const DevicesPage()),
+                    _drawerItem(context,
+                        icon: Icons.notifications_active_outlined,
+                        label: 'Alerts & Thresholds',
+                        page: const AlertsThresholdsPage()),
+                    _drawerItem(context,
+                        icon: Icons.view_module,
+                        label: 'Rack Layout',
+                        page: const RackLayoutPage()),
+                    // Members — visible to everyone; the page is read-only for
+                    // non-admins (no approve/reject or email/SMS toggles).
+                    _drawerItem(context,
+                        icon: Icons.group_outlined,
+                        label: 'Members',
+                        page: const MembersPage()),
+                    // Admin-only tools.
+                    if (auth.isAdmin) ...[
+                      _drawerItem(context,
+                          icon: Icons.tune,
+                          label: 'System / Manage',
+                          page: const SystemPage()),
+                      _drawerItem(context,
+                          icon: Icons.terminal,
+                          label: 'Console',
+                          page: const ConsolePage()),
+                    ],
+                    _drawerItem(context,
+                        icon: Icons.settings,
+                        label: 'Settings',
+                        page: SettingsPage(onToggleTheme: widget.onToggleTheme)),
+                  ],
+                ),
               ),
             ),
             const Divider(height: 1),

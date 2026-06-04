@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/topology_service.dart';
+import '../services/auth_service.dart';
 import '../models/rack_topology.dart';
 import '../utils/auth_guard.dart';
 import '../widgets/assign_sensor_dialog.dart';
 
-/// Operator-configurable rack → unit → port layout. The assignment targets
-/// (ports) defined here feed the "Assign Sensor" dropdown flow.
+/// Rack → unit → port layout. Admins can edit it; members see it read-only.
 class RackLayoutPage extends StatelessWidget {
   const RackLayoutPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final editable = context.watch<AuthService>().isAdmin;
     return Scaffold(
       appBar: AppBar(title: const Text('Rack Layout')),
       body: Consumer<TopologyService>(
@@ -25,17 +26,21 @@ class RackLayoutPage extends StatelessWidget {
                   children: [
                     const Icon(Icons.view_module, size: 48, color: Colors.grey),
                     const SizedBox(height: 12),
-                    const Text(
-                      'No racks yet.\nAdd a rack, then units and ports (intake/exhaust).',
+                    Text(
+                      editable
+                          ? 'No racks yet.\nAdd a rack, then units and ports (intake/exhaust).'
+                          : 'No rack layout has been configured yet.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
+                      style: const TextStyle(color: Colors.grey),
                     ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add Rack'),
-                      onPressed: () => _addRackDialog(context, topo),
-                    ),
+                    if (editable) ...[
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Rack'),
+                        onPressed: () => _addRackDialog(context, topo),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -45,16 +50,18 @@ class RackLayoutPage extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
-              ...topo.racks.map((r) => _RackCard(rack: r, topo: topo)),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: ActionChip(
-                  avatar: const Icon(Icons.add, size: 18),
-                  label: const Text('Add Rack'),
-                  onPressed: () => _addRackDialog(context, topo),
+              ...topo.racks.map((r) => _RackCard(rack: r, topo: topo, editable: editable)),
+              if (editable) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ActionChip(
+                    avatar: const Icon(Icons.add, size: 18),
+                    label: const Text('Add Rack'),
+                    onPressed: () => _addRackDialog(context, topo),
+                  ),
                 ),
-              ),
+              ],
             ],
           );
         },
@@ -70,7 +77,8 @@ class RackLayoutPage extends StatelessWidget {
 class _RackCard extends StatelessWidget {
   final Rack rack;
   final TopologyService topo;
-  const _RackCard({required this.rack, required this.topo});
+  final bool editable;
+  const _RackCard({required this.rack, required this.topo, required this.editable});
 
   @override
   Widget build(BuildContext context) {
@@ -88,34 +96,39 @@ class _RackCard extends StatelessWidget {
                   child: Text(rack.name,
                       style: Theme.of(context).textTheme.titleMedium),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.edit, size: 18),
-                  tooltip: 'Rename rack',
-                  onPressed: () => _nameDialog(
-                      context, 'Rename Rack', 'Rack name',
-                      (n) => topo.renameRack(rack.id, n),
-                      initial: rack.name),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  tooltip: 'Delete rack',
-                  onPressed: () => _confirmDelete(
-                      context, 'Delete ${rack.name}?',
-                      () => topo.removeRack(rack.id)),
-                ),
+                if (editable) ...[
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 18),
+                    tooltip: 'Rename rack',
+                    onPressed: () => _nameDialog(
+                        context, 'Rename Rack', 'Rack name',
+                        (n) => topo.renameRack(rack.id, n),
+                        initial: rack.name),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    tooltip: 'Delete rack',
+                    onPressed: () => _confirmDelete(
+                        context, 'Delete ${rack.name}?',
+                        () => topo.removeRack(rack.id)),
+                  ),
+                ],
               ],
             ),
             const Divider(),
-            ...rack.units.map((u) => _UnitTile(rack: rack, unit: u, topo: topo)),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ActionChip(
-                avatar: const Icon(Icons.add, size: 18),
-                label: const Text('Add Unit'),
-                onPressed: () => topo.addUnit(rack.id),
+            ...rack.units.map((u) =>
+                _UnitTile(rack: rack, unit: u, topo: topo, editable: editable)),
+            if (editable) ...[
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ActionChip(
+                  avatar: const Icon(Icons.add, size: 18),
+                  label: const Text('Add Unit'),
+                  onPressed: () => topo.addUnit(rack.id),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -127,7 +140,9 @@ class _UnitTile extends StatelessWidget {
   final Rack rack;
   final RackUnit unit;
   final TopologyService topo;
-  const _UnitTile({required this.rack, required this.unit, required this.topo});
+  final bool editable;
+  const _UnitTile(
+      {required this.rack, required this.unit, required this.topo, required this.editable});
 
   @override
   Widget build(BuildContext context) {
@@ -144,36 +159,38 @@ class _UnitTile extends StatelessWidget {
                 child: Text(unit.name,
                     style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, size: 16),
-                tooltip: 'Delete unit',
-                onPressed: () => _confirmDelete(
-                    context, 'Delete ${unit.name}?',
-                    () => topo.removeUnit(rack.id, unit.id)),
-              ),
+              if (editable)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  tooltip: 'Delete unit',
+                  onPressed: () => _confirmDelete(
+                      context, 'Delete ${unit.name}?',
+                      () => topo.removeUnit(rack.id, unit.id)),
+                ),
             ],
           ),
-          ...unit.ports.map((p) => _PortRow(port: p, topo: topo)),
-          Padding(
-            padding: const EdgeInsets.only(left: 26, top: 2),
-            child: Wrap(
-              spacing: 8,
-              children: [
-                ActionChip(
-                  avatar: const Icon(Icons.login, size: 16),
-                  label: const Text('Add Intake'),
-                  onPressed: () =>
-                      topo.addPort(rack.id, unit.id, PortType.intake),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.logout, size: 16),
-                  label: const Text('Add Exhaust'),
-                  onPressed: () =>
-                      topo.addPort(rack.id, unit.id, PortType.exhaust),
-                ),
-              ],
+          ...unit.ports.map((p) => _PortRow(port: p, topo: topo, editable: editable)),
+          if (editable)
+            Padding(
+              padding: const EdgeInsets.only(left: 26, top: 2),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.login, size: 16),
+                    label: const Text('Add Intake'),
+                    onPressed: () =>
+                        topo.addPort(rack.id, unit.id, PortType.intake),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.logout, size: 16),
+                    label: const Text('Add Exhaust'),
+                    onPressed: () =>
+                        topo.addPort(rack.id, unit.id, PortType.exhaust),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -183,7 +200,8 @@ class _UnitTile extends StatelessWidget {
 class _PortRow extends StatelessWidget {
   final Port port;
   final TopologyService topo;
-  const _PortRow({required this.port, required this.topo});
+  final bool editable;
+  const _PortRow({required this.port, required this.topo, required this.editable});
 
   @override
   Widget build(BuildContext context) {
@@ -205,32 +223,32 @@ class _PortRow extends StatelessWidget {
                   port.assignedEui ?? 'unassigned',
                   style: TextStyle(
                     fontSize: 11,
-                    color: port.assignedEui != null
-                        ? Colors.green
-                        : Colors.grey,
+                    color: port.assignedEui != null ? Colors.green : Colors.grey,
                     fontFamily: 'monospace',
                   ),
                 ),
               ],
             ),
           ),
-          ActionChip(
-            avatar: const Icon(Icons.link, size: 16),
-            label: Text(port.assignedEui != null ? 'Reassign' : 'Assign'),
-            onPressed: () => runWithAuthGuard(
-                context, () => showAssignSensorDialog(context, port: port)),
-          ),
-          if (port.assignedEui != null)
-            IconButton(
-              icon: const Icon(Icons.link_off, size: 16),
-              tooltip: 'Unassign',
-              onPressed: () => topo.assignEui(port.id, null),
+          if (editable) ...[
+            ActionChip(
+              avatar: const Icon(Icons.link, size: 16),
+              label: Text(port.assignedEui != null ? 'Reassign' : 'Assign'),
+              onPressed: () => runWithAuthGuard(
+                  context, () => showAssignSensorDialog(context, port: port)),
             ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 16),
-            tooltip: 'Delete port',
-            onPressed: () => topo.removePort(port.id),
-          ),
+            if (port.assignedEui != null)
+              IconButton(
+                icon: const Icon(Icons.link_off, size: 16),
+                tooltip: 'Unassign',
+                onPressed: () => topo.assignEui(port.id, null),
+              ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 16),
+              tooltip: 'Delete port',
+              onPressed: () => topo.removePort(port.id),
+            ),
+          ],
         ],
       ),
     );
