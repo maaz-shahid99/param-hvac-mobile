@@ -14,13 +14,17 @@ extension PortTypeX on PortType {
       k == 'exhaust' ? PortType.exhaust : PortType.intake;
 }
 
-/// A single probe/port on a unit, optionally assigned to a sensor EUI.
+/// A single probe/port on a unit, optionally assigned to one probe of a sensor.
 class Port {
   final String id;
   PortType type;
   String label; // e.g. "Intake 1"
   int box; // unique flat box id -> keeps the legacy 3D grid working
   String? assignedEui; // null until a sensor is mapped here
+  // Which DS18B20 probe of [assignedEui] feeds this port, identified by its
+  // 64-bit ROM (plug/unplug-stable). null = whole-sensor (legacy) mapping.
+  String? assignedProbeRom;
+  String? probeLabel; // friendly label shown in the UI, e.g. "Probe 3"
 
   Port({
     required this.id,
@@ -28,6 +32,8 @@ class Port {
     required this.label,
     required this.box,
     this.assignedEui,
+    this.assignedProbeRom,
+    this.probeLabel,
   });
 
   String get slot => type.slot;
@@ -38,6 +44,8 @@ class Port {
         'label': label,
         'box': box,
         'assignedEui': assignedEui,
+        'assignedProbeRom': assignedProbeRom,
+        'probeLabel': probeLabel,
       };
 
   factory Port.fromJson(Map<String, dynamic> j) => Port(
@@ -46,6 +54,8 @@ class Port {
         label: j['label'] as String? ?? 'Port',
         box: (j['box'] as num?)?.toInt() ?? 0,
         assignedEui: j['assignedEui'] as String?,
+        assignedProbeRom: j['assignedProbeRom'] as String?,
+        probeLabel: j['probeLabel'] as String?,
       );
 }
 

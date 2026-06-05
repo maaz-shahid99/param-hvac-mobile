@@ -78,19 +78,20 @@ class LiveTempsCard extends StatelessWidget {
           else
             ...sensors.map((s) {
               final m = s as Map<String, dynamic>;
-              final maxc = (m['max_c'] as num).toDouble();
+              // Per-probe temperature ('temp') when the row is a mapped probe;
+              // falls back to the sensor's hottest ('max_c') for legacy rows.
+              final temp = (m['temp'] as num?)?.toDouble() ?? (m['max_c'] as num?)?.toDouble();
               final ago = (now - (m['ts'] as num).toDouble()).clamp(0, 1e9).round();
               final loc = (m['location'] as String?)?.isNotEmpty == true
                   ? m['location'] as String
                   : (m['eui'] as String);
+              final hot = temp != null && temp >= highLimit;
               return ListTile(
                 dense: true,
-                leading: Text('${maxc.toStringAsFixed(1)}°',
+                leading: Text(temp != null ? '${temp.toStringAsFixed(1)}°' : '—',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: maxc >= highLimit
-                            ? Theme.of(context).colorScheme.error
-                            : null)),
+                        color: hot ? Theme.of(context).colorScheme.error : null)),
                 title: Text(loc),
                 subtitle: Text('${ago}s ago • slot ${m['slot']}'),
               );

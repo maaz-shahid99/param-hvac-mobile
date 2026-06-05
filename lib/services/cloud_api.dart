@@ -202,6 +202,21 @@ class CloudApi {
     await _decode(r);
   }
 
+  // ---- tenant settings (alert granularity) ----------------------------------
+  /// 'sensor' (one alert per sensor on its hottest probe) or 'probe' (each
+  /// mapped probe alerts independently at its own exhaust).
+  Future<String> getAlertGranularity() async {
+    final r = await http.get(_u('/v1/settings'), headers: _headers());
+    final data = await _decode(r) as Map<String, dynamic>;
+    return (data['alert_granularity'] as String?) ?? 'sensor';
+  }
+
+  Future<void> setAlertGranularity(String value) async {
+    final r = await http.put(_u('/v1/settings'),
+        headers: _headers(), body: jsonEncode({'alert_granularity': value}));
+    await _decode(r);
+  }
+
   // ---- live temps + alerts --------------------------------------------------
   Future<List<dynamic>> currentTemps() async {
     final r = await http.get(_u('/v1/current'), headers: _headers());

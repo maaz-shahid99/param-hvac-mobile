@@ -220,7 +220,10 @@ class _PortRow extends StatelessWidget {
                 Text('${port.label}  ·  box${port.box}-${port.slot}',
                     style: const TextStyle(fontSize: 13)),
                 Text(
-                  port.assignedEui ?? 'unassigned',
+                  port.assignedEui == null
+                      ? 'unassigned'
+                      : '${port.assignedEui}'
+                          '${port.probeLabel != null ? "  ·  ${port.probeLabel}" : ""}',
                   style: TextStyle(
                     fontSize: 11,
                     color: port.assignedEui != null ? Colors.green : Colors.grey,

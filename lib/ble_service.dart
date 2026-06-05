@@ -140,6 +140,9 @@ class BLEService extends ChangeNotifier {
   final Map<String, String> _meshAccumulator = {};
   bool _collectingMesh = false;
 
+  // --- Probe discovery per sensor (PROBES?<eui> -> ROM list for the assign UI) ---
+  final Map<String, List<ProbeReading>> _probesByEui = {};
+
   // Getters
   bool get isScanning => _isScanning;
   bool get isConnected => _isConnected;
@@ -154,6 +157,10 @@ class BLEService extends ChangeNotifier {
   String get otaStatus => _otaStatus;
   List<String> get liveNodes => List.unmodifiable(_liveNodes);
   Map<String, String> get meshNodes => Map.unmodifiable(_meshNodes);
+
+  /// The probes most recently reported for [eui] (from a PROBES?<eui> reply).
+  List<ProbeReading> probesFor(String eui) =>
+      List.unmodifiable(_probesByEui[eui.trim().toLowerCase()] ?? const <ProbeReading>[]);
 
   BLEService() {
     _initializeSecretKey();
@@ -345,7 +352,10 @@ class BLEService extends ChangeNotifier {
               });
               _addLog("Notifications enabled.");
 
-              // Get MTU size
+              // Negotiate a larger MTU so a full PROBES?/NODES? reply (up to 10
+              // probes with 16-hex ROMs ~255 B) fits in one notification. Android
+              // honors this; iOS/others keep their fixed MTU (still fine for ≤8).
+              try { await _connectedDevice!.requestMtu(512); } catch (_) {}
               final mtu = await _connectedDevice!.mtu.first;
               _addLog('MTU: $mtu bytes');
 
@@ -500,6 +510,37 @@ class BLEService extends ChangeNotifier {
         _meshNodes = m;
         _addLog('🧭 ${_meshNodes.length} mesh node(s)');
         notifyListeners();
+        return;
+      }
+
+      // 1d-1b. Per-sensor probe list (PROBES?<eui> reply, single notification):
+      // "PROBES|<eui>|<rom>:<temp>,<rom>:<temp>,..." (empty -> "PROBES|<eui>|").
+      if (line.startsWith('PROBES|')) {
+        final rest = line.substring(7);
+        final bar = rest.indexOf('|');
+        if (bar >= 0) {
+          final eui = rest.substring(0, bar).trim().toLowerCase();
+          final body = rest.substring(bar + 1).trim();
+          final list = <ProbeReading>[];
+          if (body.isNotEmpty) {
+            var idx = 0;
+            for (final part in body.split(',')) {
+              final kv = part.split(':');
+              final rom = kv[0].trim().toLowerCase();
+              if (rom.isEmpty) continue;
+              double? temp;
+              if (kv.length > 1) {
+                final v = kv[1].trim();
+                if (v.toLowerCase() != 'err') temp = double.tryParse(v);
+              }
+              list.add(ProbeReading(rom: rom, tempC: temp, index: idx));
+              idx++;
+            }
+          }
+          _probesByEui[eui] = list;
+          _addLog('🌡️ ${list.length} probe(s) on $eui');
+          notifyListeners();
+        }
         return;
       }
 
@@ -687,6 +728,17 @@ class BLEService extends ChangeNotifier {
   Future<void> requestRouters() async {
     if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
     await _writeCommandWithRetry('ROUTERS?');
+  }
+
+  /// Ask the bridge for the live probe list of one sensor (PROBES?<eui>). The
+  /// reply arrives async as PROBES|<eui>|<rom>:<temp>,... and populates
+  /// [probesFor] — used by the assign dialog's probe dropdown.
+  Future<void> requestProbes(String eui) async {
+    if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
+    final e = eui.trim().toLowerCase();
+    if (e.isEmpty) return;
+    _addLog('Requesting probes for $e...');
+    await _writeCommandWithRetry('PROBES?$e');
   }
 
   /// Send a raw command to the bridge exactly as typed (unsigned), for the
@@ -956,4 +1008,19 @@ class BLEService extends ChangeNotifier {
     disconnect();
     super.dispose();
   }
+}
+
+/// One DS18B20 probe of a sensor, as reported by a `PROBES?<eui>` reply.
+///
+/// [rom] is the probe's 64-bit ROM serial (lower-hex) — its stable identity used
+/// for mapping (survives unplug/reorder). [index] is the current discovery order,
+/// only used for the friendly "Probe N" label in the dropdown.
+class ProbeReading {
+  final String rom;
+  final double? tempC; // latest reading, null if 'err'/disconnected
+  final int index;
+  ProbeReading({required this.rom, required this.tempC, required this.index});
+
+  String get label => 'Probe ${index + 1}';
+  String get shortRom => rom.length >= 6 ? rom.substring(rom.length - 6) : rom;
 }

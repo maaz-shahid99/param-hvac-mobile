@@ -155,25 +155,44 @@ class TopologyService extends ChangeNotifier {
   }
 
   // ---- assignment -----------------------------------------------------------
-  void assignEui(String portId, String? eui) {
+  /// Assign one probe of a sensor to a port. [rom] is the DS18B20 ROM (null/empty
+  /// = whole-sensor legacy mapping). A given physical probe lives in exactly one
+  /// place, so the same (eui, rom) is cleared from any other port first; the same
+  /// eui may legitimately occupy many ports with *different* roms.
+  void assignProbe(String portId, String? eui, {String? rom, String? probeLabel}) {
     final p = portById(portId);
     if (p == null) return;
     final e = eui?.trim().toLowerCase();
-    // A device can only live in one place: clear it from any other port first.
+    final r0 = rom?.trim().toLowerCase();
     if (e != null && e.isNotEmpty) {
       for (final r in _topology.racks) {
         for (final u in r.units) {
           for (final other in u.ports) {
-            if (other.id != portId && other.assignedEui == e) {
+            if (other.id != portId &&
+                other.assignedEui == e &&
+                (other.assignedProbeRom ?? '') == (r0 ?? '')) {
               other.assignedEui = null;
+              other.assignedProbeRom = null;
+              other.probeLabel = null;
             }
           }
         }
       }
     }
-    p.assignedEui = (e == null || e.isEmpty) ? null : e;
+    if (e == null || e.isEmpty) {
+      p.assignedEui = null;
+      p.assignedProbeRom = null;
+      p.probeLabel = null;
+    } else {
+      p.assignedEui = e;
+      p.assignedProbeRom = (r0 == null || r0.isEmpty) ? null : r0;
+      p.probeLabel = probeLabel;
+    }
     _save();
   }
+
+  /// Back-compat shim: assign a whole sensor (no probe) to a port.
+  void assignEui(String portId, String? eui) => assignProbe(portId, eui);
 
   // ---- lookups --------------------------------------------------------------
   Rack? _rack(String rackId) {

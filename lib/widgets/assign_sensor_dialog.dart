@@ -33,6 +33,8 @@ class _AssignSensorDialog extends StatefulWidget {
 
 class _AssignSensorDialogState extends State<_AssignSensorDialog> {
   String? _eui;
+  String? _probeRom;   // null = whole-sensor (hottest probe) mapping
+  String? _probeLabel;
   String? _rackId;
   String? _unitId;
   String? _portId;
@@ -41,11 +43,13 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
   void initState() {
     super.initState();
     _eui = widget.presetEui?.toLowerCase();
-    // Ask the bridge for a fresh live-device list as the dialog opens.
+    // Ask the bridge for a fresh live-device list as the dialog opens, plus the
+    // probe list for a pre-selected sensor (post-commission flow).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<BLEService>().requestNodes();
-      }
+      if (!mounted) return;
+      final ble = context.read<BLEService>();
+      ble.requestNodes();
+      if (_eui != null && _eui!.isNotEmpty) ble.requestProbes(_eui!);
     });
   }
 
@@ -68,7 +72,7 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
 
     Navigator.pop(context);
     HapticFeedback.mediumImpact();
-    topo.assignEui(target.id, eui);
+    topo.assignProbe(target.id, eui, rom: _probeRom, probeLabel: _probeLabel);
     ble.setSensorMapping(
       eui64: eui,
       box: target.box,
@@ -133,8 +137,63 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
                 items: deviceItems
                     .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                     .toList(),
-                onChanged: (v) => setState(() => _eui = v),
+                onChanged: (v) => setState(() {
+                  _eui = v;
+                  _probeRom = null;
+                  _probeLabel = null;
+                  if (v != null) ble.requestProbes(v);
+                }),
               ),
+
+            // ---- probe dropdown --------------------------------------------
+            if (_eui != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(child: Text('Probe')),
+                  ActionChip(
+                    avatar: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Refresh'),
+                    onPressed: () => ble.requestProbes(_eui!),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              if (ble.probesFor(_eui!).isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No probes reported yet. Tap Refresh once the sensor is reporting.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                )
+              else
+                DropdownButton<String?>(
+                  isExpanded: true,
+                  value: _probeRom,
+                  hint: const Text('Select a probe'),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Whole sensor (hottest probe)'),
+                    ),
+                    ...ble.probesFor(_eui!).map((p) => DropdownMenuItem<String?>(
+                          value: p.rom,
+                          child: Text(
+                            '${p.label} · …${p.shortRom}'
+                            '${p.tempC != null ? " · ${p.tempC!.toStringAsFixed(1)}°C" : " · —"}',
+                          ),
+                        )),
+                  ],
+                  onChanged: (v) => setState(() {
+                    _probeRom = v;
+                    final match = v == null
+                        ? const <ProbeReading>[]
+                        : ble.probesFor(_eui!).where((p) => p.rom == v);
+                    _probeLabel = match.isEmpty ? null : match.first.label;
+                  }),
+                ),
+            ],
 
             const SizedBox(height: 12),
             const Divider(),

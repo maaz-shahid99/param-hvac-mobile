@@ -71,6 +71,9 @@ class SettingsPage extends StatelessWidget {
                 );
               },
             ),
+            // Cloud alert granularity (admin + signed-in only).
+            if (isAdmin && context.watch<AuthService>().status == AuthStatus.signedIn)
+              const _AlertGranularityTile(),
             const Divider(),
             Consumer<AuthService>(
               builder: (context, auth, _) => ListTile(
@@ -215,6 +218,77 @@ class SettingsPage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Admin toggle for how the cloud opens alerts: per-sensor (hottest probe) or
+/// per-probe (each mapped probe alerts at its own exhaust). Cloud setting.
+class _AlertGranularityTile extends StatefulWidget {
+  const _AlertGranularityTile();
+
+  @override
+  State<_AlertGranularityTile> createState() => _AlertGranularityTileState();
+}
+
+class _AlertGranularityTileState extends State<_AlertGranularityTile> {
+  String? _value; // null while loading
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final v = await context.read<AuthService>().api.getAlertGranularity();
+      if (mounted) setState(() => _value = v);
+    } catch (_) {
+      if (mounted) setState(() => _value = 'sensor');
+    }
+  }
+
+  Future<void> _set(String v) async {
+    if (v == _value || _busy) return;
+    final prev = _value;
+    setState(() {
+      _value = v;
+      _busy = true;
+    });
+    try {
+      await context.read<AuthService>().api.setAlertGranularity(v);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _value = prev);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not update: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.notifications_active_outlined),
+      title: const Text('Alert granularity'),
+      subtitle: Text(_value == 'probe'
+          ? 'Each probe alerts at its own exhaust'
+          : 'One alert per sensor (hottest probe)'),
+      trailing: _value == null
+          ? const SizedBox(
+              width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+          : SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'sensor', label: Text('Sensor')),
+                ButtonSegment(value: 'probe', label: Text('Probe')),
+              ],
+              selected: {_value!},
+              onSelectionChanged: _busy ? null : (s) => _set(s.first),
+            ),
     );
   }
 }
