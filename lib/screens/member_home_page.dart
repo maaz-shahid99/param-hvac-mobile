@@ -18,7 +18,7 @@ class MemberHomePage extends StatefulWidget {
 }
 
 class _MemberHomePageState extends State<MemberHomePage> {
-  static const int _staleSeconds = 180; // online if a reading is newer than this
+  static const int _staleSeconds = 30; // online if a reading is newer than this (~3 report cycles)
 
   List<dynamic> _alerts = [];
   List<dynamic> _sensors = [];

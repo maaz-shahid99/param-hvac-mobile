@@ -159,6 +159,24 @@ class CloudApi {
     return await _decode(r) as Map<String, dynamic>;
   }
 
+  // ---- commissioned-device roster (tenant-scoped) ---------------------------
+  Future<List<dynamic>> getDevices() async {
+    final r = await http.get(_u('/v1/devices'), headers: _headers());
+    return (await _decode(r) as Map<String, dynamic>)['devices'] as List<dynamic>;
+  }
+
+  /// Additive merge — upserts each device, never removes ones not listed.
+  Future<void> putDevices(List<Map<String, dynamic>> devices) async {
+    final r = await http.put(_u('/v1/devices'),
+        headers: _headers(), body: jsonEncode({'devices': devices}));
+    await _decode(r);
+  }
+
+  Future<void> deleteDevice(String eui) async {
+    final r = await http.delete(_u('/v1/devices/$eui'), headers: _headers());
+    await _decode(r);
+  }
+
   // ---- thresholds -----------------------------------------------------------
   Future<Map<String, dynamic>> getThresholds() async {
     final r = await http.get(_u('/v1/thresholds'), headers: _headers());

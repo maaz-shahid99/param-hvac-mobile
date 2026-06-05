@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../ble_service.dart';
 import '../services/auth_service.dart';
 import '../services/topology_service.dart';
+import '../services/device_registry.dart';
 
 /// Fleet view: the connected gateway/router and every commissioned sensor with
 /// a live online/offline indicator.
@@ -20,7 +21,7 @@ class DevicesPage extends StatefulWidget {
 }
 
 class _DevicesPageState extends State<DevicesPage> {
-  static const int _staleSeconds = 180; // matches the server's STALE_AFTER_S
+  static const int _staleSeconds = 30; // offline if no reading within ~3 report cycles (SEDs report ~10s)
   List<Map<String, dynamic>> _cloudSensors = [];
   List<Map<String, dynamic>> _cloudRouters = [];
   bool _loading = true;
@@ -63,6 +64,35 @@ class _DevicesPageState extends State<DevicesPage> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+
+    // Record every device we currently know about (cloud OR BLE OR topology) into
+    // the persistent registry, so offline ones keep showing instead of vanishing.
+    if (!mounted) return;
+    final reg = context.read<DeviceRegistry>();
+    final topo = context.read<TopologyService>();
+    final sensorEuis = <String>{...ble.liveNodes.map((e) => e.toLowerCase())};
+    for (final m in _cloudSensors) {
+      final e = (m['eui'] ?? '').toString().toLowerCase();
+      if (e.isNotEmpty) sensorEuis.add(e);
+    }
+    for (final r in topo.racks) {
+      for (final u in r.units) {
+        for (final p in u.ports) {
+          final e = p.assignedEui?.toLowerCase();
+          if (e != null && e.isNotEmpty) sensorEuis.add(e);
+        }
+      }
+    }
+    final meshNow = <String, String>{};
+    ble.meshNodes.forEach((e, role) => meshNow[e.toLowerCase()] = role);
+    for (final r in _cloudRouters) {
+      final e = (r['eui'] ?? '').toString().toLowerCase();
+      if (e.isNotEmpty) {
+        meshNow.putIfAbsent(
+            e, () => (r['kind'] ?? 'router').toString() == 'gateway' ? 'G' : 'R');
+      }
+    }
+    reg.observe(sensors: sensorEuis, meshNodes: meshNow);
   }
 
   double get _nowSec => DateTime.now().millisecondsSinceEpoch / 1000.0;
@@ -71,10 +101,17 @@ class _DevicesPageState extends State<DevicesPage> {
   Widget build(BuildContext context) {
     final ble = context.watch<BLEService>();
     final topo = context.watch<TopologyService>();
+    final registry = context.watch<DeviceRegistry>();
 
     // ---- build the unified sensor list ----
     final live = ble.liveNodes.map((e) => e.toLowerCase()).toSet();
     final byEui = <String, _Dev>{};
+
+    // 0) seed from the persisted registry so known-but-offline sensors stay listed
+    //    (overlaid below with mapped labels / cloud freshness / live status).
+    for (final d in registry.sensors) {
+      byEui[d.eui] = _Dev(eui: d.eui, label: 'Unmapped');
+    }
 
     // 1) from the rack topology (the commissioned/mapped set)
     for (final r in topo.racks) {
@@ -124,6 +161,12 @@ class _DevicesPageState extends State<DevicesPage> {
     final meshBle = ble.meshNodes; // eui(lower) -> 'G'/'R'
     String roleLabel(String role) => role == 'G' ? 'Gateway' : 'Router';
     final meshByEui = <String, _Dev>{};
+    // 0) seed from the persisted registry so known-but-offline mesh nodes stay
+    //    listed (overlaid below with cloud/BLE online status + current role).
+    for (final d in registry.meshNodes) {
+      final role = d.role == 'G' ? 'G' : 'R';
+      meshByEui[d.eui] = _Dev(eui: d.eui, label: roleLabel(role))..role = role;
+    }
     for (final r in _cloudRouters) {
       final eui = (r['eui'] ?? '').toString().toLowerCase();
       if (eui.isEmpty) continue;
@@ -274,6 +317,7 @@ class _DevicesPageState extends State<DevicesPage> {
     }
     return Card(
       child: ListTile(
+        onLongPress: () => _confirmForget(d.eui, d.label),
         leading: _statusDot(d.online),
         title: Text(d.label),
         subtitle: Text(subtitle.toString(),
@@ -297,6 +341,7 @@ class _DevicesPageState extends State<DevicesPage> {
     }
     return Card(
       child: ListTile(
+        onLongPress: () => _confirmForget(d.eui, d.label),
         leading: _statusDot(d.online),
         title: Row(children: [
           Icon(isGw ? Icons.dns : Icons.settings_input_antenna,
@@ -323,6 +368,30 @@ class _DevicesPageState extends State<DevicesPage> {
     if (s < 3600) return '${s ~/ 60}m ago';
     if (s < 86400) return '${s ~/ 3600}h ago';
     return '${s ~/ 86400}d ago';
+  }
+
+  // Long-press a tile to drop a decommissioned unit from the list. It re-appears
+  // automatically if it's ever seen again.
+  void _confirmForget(String eui, String label) {
+    showDialog(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Remove from list?'),
+        content: Text(
+            'Remove "$label"\n$eui\n\nfrom the Devices list. It will reappear '
+            'automatically if it comes back online.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              context.read<DeviceRegistry>().forget(eui);
+              Navigator.pop(dctx);
+            },
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

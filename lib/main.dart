@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'ble_service.dart';
 import 'services/topology_service.dart';
 import 'services/auth_service.dart';
+import 'services/device_registry.dart';
 import 'screens/home_page.dart';
 import 'screens/member_home_page.dart';
 import 'screens/login_page.dart';
@@ -18,6 +19,7 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => BLEService()),
         ChangeNotifierProvider(create: (_) => TopologyService()..load()),
+        ChangeNotifierProvider(create: (_) => DeviceRegistry()..load()),
         ChangeNotifierProvider(create: (_) => AuthService()..restore()),
       ],
       child: const MyApp(),
@@ -97,23 +99,26 @@ class _AuthGate extends StatefulWidget {
 class _AuthGateState extends State<_AuthGate> {
   AuthStatus _last = AuthStatus.unknown;
 
-  void _onAuthChanged(AuthService auth, TopologyService topo) {
+  void _onAuthChanged(AuthService auth, TopologyService topo, DeviceRegistry reg) {
     if (auth.status == _last) return;
     _last = auth.status;
     if (auth.status == AuthStatus.signedIn) {
       topo.bindCloud(auth.api);
       topo.loadFromCloud();
+      reg.bindCloud(auth.api);
+      reg.loadFromCloud();
     } else if (auth.status == AuthStatus.signedOut) {
       topo.bindCloud(null);
+      reg.bindCloud(null);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<AuthService, TopologyService>(
-      builder: (context, auth, topo, _) {
+    return Consumer3<AuthService, TopologyService, DeviceRegistry>(
+      builder: (context, auth, topo, reg, _) {
         // React to auth transitions without rebuilding loops.
-        WidgetsBinding.instance.addPostFrameCallback((_) => _onAuthChanged(auth, topo));
+        WidgetsBinding.instance.addPostFrameCallback((_) => _onAuthChanged(auth, topo, reg));
         switch (auth.status) {
           case AuthStatus.unknown:
             return const SplashPage();
