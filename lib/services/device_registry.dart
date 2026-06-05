@@ -5,24 +5,49 @@ import 'cloud_api.dart';
 
 enum DeviceKind { sensor, router, gateway }
 
+/// A short human name derived from a device's EUI when no custom name is set, e.g.
+/// "Sensor-4EC0", "Router-16E0", "Gateway-1BB0". Never a full hex string.
+String autoNameFor(String eui, DeviceKind kind) {
+  final e = eui.trim();
+  final suffix = (e.length >= 4 ? e.substring(e.length - 4) : e).toUpperCase();
+  const labels = {
+    DeviceKind.sensor: 'Sensor',
+    DeviceKind.router: 'Router',
+    DeviceKind.gateway: 'Gateway',
+  };
+  return '${labels[kind]}-$suffix';
+}
+
 class KnownDevice {
   final String eui;
   DeviceKind kind;
   String role;     // 'G'/'R' for mesh nodes; '' for sensors
+  String name;     // operator-assigned; '' => show the auto-name
   double lastSeen; // epoch seconds, last time observed (informational)
-  KnownDevice({required this.eui, required this.kind, this.role = '', this.lastSeen = 0});
+  KnownDevice({
+    required this.eui,
+    required this.kind,
+    this.role = '',
+    this.name = '',
+    this.lastSeen = 0,
+  });
+
+  /// Friendly label: the custom name if set, else an EUI-derived auto-name.
+  String get displayName => name.isNotEmpty ? name : autoNameFor(eui, kind);
 
   Map<String, dynamic> toJson() =>
-      {'eui': eui, 'kind': kind.name, 'role': role, 'lastSeen': lastSeen};
+      {'eui': eui, 'kind': kind.name, 'role': role, 'name': name, 'lastSeen': lastSeen};
 
-  /// The cloud roster only stores membership + type (no per-phone lastSeen).
-  Map<String, dynamic> toCloudJson() => {'eui': eui, 'kind': kind.name, 'role': role};
+  /// The cloud roster stores membership + type + name (no per-phone lastSeen).
+  Map<String, dynamic> toCloudJson() =>
+      {'eui': eui, 'kind': kind.name, 'role': role, 'name': name};
 
   factory KnownDevice.fromJson(Map<String, dynamic> j) => KnownDevice(
         eui: (j['eui'] as String).toLowerCase(),
         kind: DeviceKind.values.firstWhere((k) => k.name == j['kind'],
             orElse: () => DeviceKind.sensor),
         role: j['role'] as String? ?? '',
+        name: j['name'] as String? ?? '',
         lastSeen: (j['lastSeen'] as num?)?.toDouble() ?? 0,
       );
 }
@@ -159,6 +184,30 @@ class DeviceRegistry extends ChangeNotifier {
     } else {
       _pushIfDirty();   // back online -> flush any earlier offline additions
     }
+  }
+
+  /// Friendly name for [eui] — the custom name if one is set, else an EUI-derived
+  /// auto-name. [fallbackKind] is used when the device isn't in the roster yet.
+  String displayNameForEui(String eui, {DeviceKind fallbackKind = DeviceKind.sensor}) {
+    final d = _devices[eui.trim().toLowerCase()];
+    return d != null ? d.displayName : autoNameFor(eui, fallbackKind);
+  }
+
+  /// The raw custom name (empty if none) — for prefilling the rename field.
+  String customNameFor(String eui) => _devices[eui.trim().toLowerCase()]?.name ?? '';
+
+  /// Set (or clear) a device's custom name and sync it to the cloud roster.
+  void rename(String eui, String name) {
+    final e = eui.trim().toLowerCase();
+    final n = name.trim();
+    final d = _devices[e];
+    if (d != null) {
+      if (d.name == n) return;
+      d.name = n;
+    } else {
+      _devices[e] = KnownDevice(eui: e, kind: DeviceKind.sensor, name: n);
+    }
+    _save();   // caches + pushes the roster (the cloud preserves non-empty names)
   }
 
   /// Remove a device from the roster (decommission). Removes it on the cloud too.

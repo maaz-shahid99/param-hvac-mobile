@@ -159,7 +159,15 @@ class _UnitTile extends StatelessWidget {
                 child: Text(unit.name,
                     style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
-              if (editable)
+              if (editable) ...[
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 16),
+                  tooltip: 'Rename unit',
+                  onPressed: () => _nameDialog(
+                      context, 'Rename Unit', 'Unit name',
+                      (n) => topo.renameUnit(rack.id, unit.id, n),
+                      initial: unit.name),
+                ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 16),
                   tooltip: 'Delete unit',
@@ -167,6 +175,7 @@ class _UnitTile extends StatelessWidget {
                       context, 'Delete ${unit.name}?',
                       () => topo.removeUnit(rack.id, unit.id)),
                 ),
+              ],
             ],
           ),
           ...unit.ports.map((p) => _PortRow(port: p, topo: topo, editable: editable)),

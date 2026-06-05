@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../ble_service.dart';
 import '../services/topology_service.dart';
+import '../services/device_registry.dart';
 import '../models/rack_topology.dart';
 
 /// Opens the dropdown-based "assign a sensor to a location" dialog.
@@ -89,6 +90,7 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
   Widget build(BuildContext context) {
     final ble = context.watch<BLEService>();
     final topo = context.watch<TopologyService>();
+    final reg = context.watch<DeviceRegistry>();
     final nodes = ble.liveNodes;
 
     // Build the device option list, always including a preset/already-known eui.
@@ -101,6 +103,15 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
     final ports = _unitId == null
         ? <Port>[]
         : (_unitById(units, _unitId!)?.ports ?? []);
+
+    // Probes the selected sensor reports, minus any already mapped to another
+    // port — a probe can only feed one exhaust/intake, so taken ones drop out.
+    final allProbes = _eui == null ? const <ProbeReading>[] : ble.probesFor(_eui!);
+    final takenRoms = _eui == null
+        ? const <String>{}
+        : topo.assignedProbeRomsFor(_eui!, exceptPortId: widget.fixedPort?.id);
+    final availableProbes =
+        allProbes.where((p) => !takenRoms.contains(p.rom)).toList();
 
     return AlertDialog(
       title: const Text('Assign Sensor'),
@@ -135,7 +146,11 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
                 value: _eui,
                 hint: const Text('Select a live sensor'),
                 items: deviceItems
-                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                    .map((e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(reg.displayNameForEui(e),
+                              overflow: TextOverflow.ellipsis),
+                        ))
                     .toList(),
                 onChanged: (v) => setState(() {
                   _eui = v;
@@ -159,7 +174,7 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
                 ],
               ),
               const SizedBox(height: 4),
-              if (ble.probesFor(_eui!).isEmpty)
+              if (allProbes.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Text(
@@ -177,7 +192,7 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
                       value: null,
                       child: Text('Whole sensor (hottest probe)'),
                     ),
-                    ...ble.probesFor(_eui!).map((p) => DropdownMenuItem<String?>(
+                    ...availableProbes.map((p) => DropdownMenuItem<String?>(
                           value: p.rom,
                           child: Text(
                             '${p.label} · …${p.shortRom}'
@@ -189,9 +204,17 @@ class _AssignSensorDialogState extends State<_AssignSensorDialog> {
                     _probeRom = v;
                     final match = v == null
                         ? const <ProbeReading>[]
-                        : ble.probesFor(_eui!).where((p) => p.rom == v);
+                        : availableProbes.where((p) => p.rom == v);
                     _probeLabel = match.isEmpty ? null : match.first.label;
                   }),
+                ),
+              if (allProbes.isNotEmpty && availableProbes.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text(
+                    'All probes are already assigned to other ports.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
                 ),
             ],
 

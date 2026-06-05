@@ -124,6 +124,14 @@ class TopologyService extends ChangeNotifier {
     _save();
   }
 
+  void renameUnit(String rackId, String unitId, String name) {
+    final u = _unit(rackId, unitId);
+    if (u != null && name.trim().isNotEmpty) {
+      u.name = name.trim();
+      _save();   // caches locally + pushes the topology to the cloud (persists)
+    }
+  }
+
   void removeUnit(String rackId, String unitId) {
     final r = _rack(rackId);
     if (r == null) return;
@@ -193,6 +201,26 @@ class TopologyService extends ChangeNotifier {
 
   /// Back-compat shim: assign a whole sensor (no probe) to a port.
   void assignEui(String portId, String? eui) => assignProbe(portId, eui);
+
+  /// The probe ROMs (lower-case) of [eui] already assigned to some port, so the
+  /// assign dialog can hide probes that are already taken. [exceptPortId] is
+  /// skipped — the port being (re)assigned keeps its own probe selectable.
+  Set<String> assignedProbeRomsFor(String eui, {String? exceptPortId}) {
+    final e = eui.trim().toLowerCase();
+    final out = <String>{};
+    for (final r in _topology.racks) {
+      for (final u in r.units) {
+        for (final p in u.ports) {
+          if (p.id == exceptPortId) continue;
+          if ((p.assignedEui ?? '').toLowerCase() == e) {
+            final rom = (p.assignedProbeRom ?? '').toLowerCase();
+            if (rom.isNotEmpty) out.add(rom);
+          }
+        }
+      }
+    }
+    return out;
+  }
 
   // ---- lookups --------------------------------------------------------------
   Rack? _rack(String rackId) {

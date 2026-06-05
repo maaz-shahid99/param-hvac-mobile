@@ -144,12 +144,13 @@ class _DevicesPageState extends State<DevicesPage> {
     for (final d in byEui.values) {
       final freshCloud = d.lastSeen != null && (_nowSec - d.lastSeen!) < _staleSeconds;
       d.online = freshCloud || live.contains(d.eui);
+      d.name = registry.displayNameForEui(d.eui, fallbackKind: DeviceKind.sensor);
     }
 
     final sensors = byEui.values.toList()
       ..sort((a, b) {
         if (a.online != b.online) return a.online ? -1 : 1; // online first
-        return a.label.compareTo(b.label);
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
     final onlineCount = sensors.where((d) => d.online).length;
 
@@ -184,6 +185,10 @@ class _DevicesPageState extends State<DevicesPage> {
       d.online = true; // present in the live BLE roster -> online now
       meshByEui[eui] = d;
     });
+    for (final d in meshByEui.values) {
+      d.name = registry.displayNameForEui(d.eui,
+          fallbackKind: d.role == 'G' ? DeviceKind.gateway : DeviceKind.router);
+    }
     final mesh = meshByEui.values.toList()
       ..sort((a, b) {
         if (a.role != b.role) return a.role == 'G' ? -1 : 1; // gateways first
@@ -309,56 +314,99 @@ class _DevicesPageState extends State<DevicesPage> {
         ),
       );
 
+  // trailing online status + a ⋮ menu (Rename / Remove) shared by both tile types.
+  Widget _tileTrailing(_Dev d) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(d.online ? 'ONLINE' : 'OFFLINE',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: d.online ? Colors.green : Colors.grey)),
+          PopupMenuButton<String>(
+            tooltip: 'Device actions',
+            onSelected: (v) {
+              if (v == 'rename') _renameDialog(d.eui);
+              if (v == 'remove') _confirmForget(d.eui, d.name);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'rename', child: Text('Rename')),
+              PopupMenuItem(value: 'remove', child: Text('Remove from list')),
+            ],
+          ),
+        ],
+      );
+
   Widget _sensorTile(_Dev d) {
-    final subtitle = StringBuffer(d.eui);
+    final loc = d.label == 'Unmapped' ? null : d.label;
+    final sub = StringBuffer();
+    if (loc != null) sub.write('$loc  ·  ');
+    sub.write(d.eui);
     if (d.lastSeen != null && d.lastSeen! > 0) {
-      final ago = (_nowSec - d.lastSeen!).round();
-      subtitle.write('  ·  ${_ago(ago)}');
+      sub.write('  ·  ${_ago((_nowSec - d.lastSeen!).round())}');
     }
     return Card(
       child: ListTile(
-        onLongPress: () => _confirmForget(d.eui, d.label),
         leading: _statusDot(d.online),
-        title: Text(d.label),
-        subtitle: Text(subtitle.toString(),
+        title: Text(d.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(sub.toString(),
             style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
-        trailing: Text(
-          d.online ? 'ONLINE' : 'OFFLINE',
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: d.online ? Colors.green : Colors.grey),
-        ),
+        trailing: _tileTrailing(d),
       ),
     );
   }
 
   Widget _meshTile(_Dev d) {
     final isGw = d.role == 'G';
-    final subtitle = StringBuffer(d.eui);
+    final sub = StringBuffer(isGw ? 'Gateway (active)  ·  ' : 'Router  ·  ')..write(d.eui);
     if (d.lastSeen != null && d.lastSeen! > 0) {
-      subtitle.write('  ·  ${_ago((_nowSec - d.lastSeen!).round())}');
+      sub.write('  ·  ${_ago((_nowSec - d.lastSeen!).round())}');
     }
     return Card(
       child: ListTile(
-        onLongPress: () => _confirmForget(d.eui, d.label),
         leading: _statusDot(d.online),
         title: Row(children: [
           Icon(isGw ? Icons.dns : Icons.settings_input_antenna,
               size: 16, color: isGw ? Colors.indigo : Colors.blueGrey),
           const SizedBox(width: 6),
-          Text(isGw ? 'Gateway (active)' : 'Router',
-              style: const TextStyle(fontWeight: FontWeight.w600)),
+          Expanded(
+            child: Text(d.name,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis),
+          ),
         ]),
-        subtitle: Text(subtitle.toString(),
+        subtitle: Text(sub.toString(),
             style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
-        trailing: Text(
-          d.online ? 'ONLINE' : 'OFFLINE',
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: d.online ? Colors.green : Colors.grey),
+        trailing: _tileTrailing(d),
+      ),
+    );
+  }
+
+  void _renameDialog(String eui) {
+    final reg = context.read<DeviceRegistry>();
+    final controller = TextEditingController(text: reg.customNameFor(eui));
+    showDialog(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Rename device'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'Name',
+            hintText: reg.displayNameForEui(eui),
+          ),
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              reg.rename(eui, controller.text);
+              Navigator.pop(dctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
       ),
     );
   }
@@ -398,6 +446,7 @@ class _DevicesPageState extends State<DevicesPage> {
 class _Dev {
   final String eui;
   String label;
+  String name = ''; // friendly display name (custom or EUI-derived auto-name)
   double? lastSeen;
   bool online = false;
   String role = ''; // 'G' = gateway, 'R' = router (mesh nodes only)
