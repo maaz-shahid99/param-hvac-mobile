@@ -5,6 +5,8 @@ import '../ble_service.dart';
 import '../services/auth_service.dart';
 import '../screens/diagnostics_page.dart';
 import '../screens/devices_page.dart';
+import '../screens/env_data_page.dart';
+import '../screens/crash_reports_page.dart';
 import '../screens/alerts_thresholds_page.dart';
 import '../screens/rack_layout_page.dart';
 import '../screens/members_page.dart';
@@ -85,6 +87,14 @@ class AppDrawer extends StatelessWidget {
                         icon: Icons.view_module,
                         label: 'Rack Layout',
                         page: const RackLayoutPage()),
+                    _item(context,
+                        icon: Icons.insights_outlined,
+                        label: 'Environment & Logs',
+                        page: const EnvDataPage()),
+                    _item(context,
+                        icon: Icons.bug_report_outlined,
+                        label: 'Crash Reports',
+                        page: const CrashReportsPage()),
                     _item(context,
                         icon: Icons.group_outlined,
                         label: 'Members',

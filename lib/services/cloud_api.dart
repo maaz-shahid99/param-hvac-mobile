@@ -217,6 +217,47 @@ class CloudApi {
     await _decode(r);
   }
 
+  /// Full settings map (alert_granularity + collect_interval_s).
+  Future<Map<String, dynamic>> getSettings() async {
+    final r = await http.get(_u('/v1/settings'), headers: _headers());
+    return await _decode(r) as Map<String, dynamic>;
+  }
+
+  /// How often (seconds) devices sample/forward data. Clamped 10..3600 server-side.
+  Future<void> setCollectInterval(int seconds) async {
+    final r = await http.put(_u('/v1/settings'),
+        headers: _headers(), body: jsonEncode({'collect_interval_s': seconds}));
+    await _decode(r);
+  }
+
+  // ---- environmental data (router/gateway BME) ------------------------------
+  Future<List<dynamic>> envCurrent() async {
+    final r = await http.get(_u('/v1/env/current'), headers: _headers());
+    return (await _decode(r) as Map<String, dynamic>)['env'] as List<dynamic>;
+  }
+
+  /// Every probe of every mapped sensor (all probes, labeled by location or
+  /// "Probe N"); excludes fully-unmapped sensors. For the Environment & Logs view.
+  Future<List<dynamic>> envProbes() async {
+    final r = await http.get(_u('/v1/env/probes'), headers: _headers());
+    return (await _decode(r) as Map<String, dynamic>)['probes'] as List<dynamic>;
+  }
+
+  // ---- firmware crash reports -----------------------------------------------
+  Future<List<dynamic>> crashes() async {
+    final r = await http.get(_u('/v1/crashes'), headers: _headers());
+    return (await _decode(r) as Map<String, dynamic>)['crashes'] as List<dynamic>;
+  }
+
+  /// Fetch a CSV export endpoint's body (raw text) for saving/sharing as a file.
+  Future<String> fetchCsv(String path) async {
+    final r = await http.get(_u(path), headers: _headers());
+    if (r.statusCode < 200 || r.statusCode >= 300) {
+      throw CloudApiException(r.statusCode, 'HTTP ${r.statusCode}');
+    }
+    return r.body;
+  }
+
   // ---- live temps + alerts --------------------------------------------------
   Future<List<dynamic>> currentTemps() async {
     final r = await http.get(_u('/v1/current'), headers: _headers());

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +20,14 @@ class TopologyService extends ChangeNotifier {
   CloudApi? _cloud;
   bool _syncing = false;
 
+  // Push coordination: coalesce rapid edits (debounce) and never let two PUTs
+  // overlap (serialize) — overlapping/out-of-order PUTs were losing assignments.
+  Timer? _pushTimer;
+  bool _pushInFlight = false;
+  bool _pushQueued = false;
+  bool get _hasPendingPush =>
+      _pushInFlight || _pushQueued || (_pushTimer?.isActive ?? false);
+
   List<Rack> get racks => List.unmodifiable(_topology.racks);
   bool get isLoaded => _loaded;
   bool get isEmpty => _topology.racks.isEmpty;
@@ -37,6 +46,9 @@ class TopologyService extends ChangeNotifier {
   Future<void> loadFromCloud() async {
     final cloud = _cloud;
     if (cloud == null || !cloud.isConfigured) return;
+    // Never clobber local edits that haven't finished syncing up — otherwise a
+    // pull racing a fresh assignment would silently discard it.
+    if (_hasPendingPush) return;
     _syncing = true;
     notifyListeners();
     try {
@@ -55,15 +67,41 @@ class TopologyService extends ChangeNotifier {
     }
   }
 
+  /// Serialized + coalescing push. Two assignments in quick succession used to
+  /// fire two overlapping PUTs that could arrive out of order, leaving the cloud
+  /// on the stale state. Now: at most one PUT in flight; any edit arriving during
+  /// a push re-pushes the *latest* full state afterwards; failures retry.
   Future<void> _pushToCloud() async {
     final cloud = _cloud;
     if (cloud == null || !cloud.isConfigured) return;
+    if (_pushInFlight) {
+      _pushQueued = true; // a newer edit arrived mid-flight — push again after
+      return;
+    }
+    _pushInFlight = true;
+    bool ok = false;
     try {
       await cloud.putTopology(
           jsonDecode(_topology.toJsonString()) as Map<String, dynamic>);
+      ok = true;
     } catch (_) {
-      // best-effort; the local cache is still the latest and will re-push later
+      // best-effort; retried below
+    } finally {
+      _pushInFlight = false;
     }
+    if (_pushQueued) {
+      _pushQueued = false;
+      await _pushToCloud(); // send the newest state that landed during the push
+    } else if (!ok) {
+      _pushTimer?.cancel();
+      _pushTimer = Timer(const Duration(seconds: 5), _pushToCloud); // retry stale push
+    }
+  }
+
+  /// Debounce rapid edits into a single push of the final state.
+  void _schedulePush() {
+    _pushTimer?.cancel();
+    _pushTimer = Timer(const Duration(milliseconds: 500), _pushToCloud);
   }
 
   // ---- persistence ----------------------------------------------------------
@@ -90,7 +128,7 @@ class TopologyService extends ChangeNotifier {
   Future<void> _save() async {
     notifyListeners();
     await _cacheLocally();
-    await _pushToCloud();
+    _schedulePush();
   }
 
   // ---- racks ----------------------------------------------------------------

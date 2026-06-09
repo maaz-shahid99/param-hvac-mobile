@@ -42,6 +42,16 @@ class CommissionedDevice {
 }
 
 /// Snapshot of a bridge unit's status, parsed from the firmware's `SYS|...` reply.
+/// A Wi-Fi network from a bridge SCAN? reply (for the Router Setup picker).
+class WifiNetwork {
+  final String ssid;
+  final int rssi;          // dBm
+  final int enc;           // 0=open, 1=secured (PSK), 2=enterprise
+  WifiNetwork({required this.ssid, required this.rssi, required this.enc});
+  bool get isEnterprise => enc == 2;
+  bool get isOpen => enc == 0;
+}
+
 class SystemStatus {
   final String role;       // LEADER / STANDBY
   final int c3Version;     // Bridge (C3) firmware version
@@ -143,6 +153,9 @@ class BLEService extends ChangeNotifier {
   // --- Probe discovery per sensor (PROBES?<eui> -> ROM list for the assign UI) ---
   final Map<String, List<ProbeReading>> _probesByEui = {};
 
+  // --- Wi-Fi scan results (SCAN? -> Router Setup network picker) ---
+  List<WifiNetwork> _wifiNetworks = [];
+
   // Getters
   bool get isScanning => _isScanning;
   bool get isConnected => _isConnected;
@@ -157,6 +170,7 @@ class BLEService extends ChangeNotifier {
   String get otaStatus => _otaStatus;
   List<String> get liveNodes => List.unmodifiable(_liveNodes);
   Map<String, String> get meshNodes => Map.unmodifiable(_meshNodes);
+  List<WifiNetwork> get wifiNetworks => List.unmodifiable(_wifiNetworks);
 
   /// The probes most recently reported for [eui] (from a PROBES?<eui> reply).
   List<ProbeReading> probesFor(String eui) =>
@@ -486,6 +500,30 @@ class BLEService extends ChangeNotifier {
         return;
       }
 
+      // Wi-Fi scan reply (Router Setup picker): "WIFI|<ssid>:<rssi>:<enc>,..."
+      // enc: 0=open, 1=secured(PSK), 2=enterprise.
+      if (line.startsWith('WIFI|')) {
+        final body = line.substring(5).trim();
+        final nets = <WifiNetwork>[];
+        if (body.isNotEmpty) {
+          for (final tok in body.split(',')) {
+            final p = tok.split(':');
+            if (p.length >= 3) {
+              nets.add(WifiNetwork(
+                ssid: p[0],
+                rssi: int.tryParse(p[1]) ?? -100,
+                enc: int.tryParse(p[2]) ?? 1,
+              ));
+            }
+          }
+        }
+        nets.sort((a, b) => b.rssi.compareTo(a.rssi));
+        _wifiNetworks = nets;
+        _addLog('📶 ${nets.length} Wi-Fi network(s)');
+        notifyListeners();
+        return;
+      }
+
       // 1d-1. Single-line replies (firmware >= c3 v12): one BLE notification so
       // nothing is dropped. "NODES|<eui>,<eui>,..." and "ROUTERS|<eui>:<role>,...".
       if (line.startsWith('NODES|')) {
@@ -667,6 +705,9 @@ class BLEService extends ChangeNotifier {
     String discoveryUrl = '',
     String cloudUrl = '',
     String cloudKey = '',
+    String wifiAuth = 'psk',     // 'psk' | 'peap' (WPA2-Enterprise)
+    String eapUser = '',         // enterprise username
+    String eapId = '',           // enterprise outer identity (defaults to username)
   }) async {
     if (_targetCharacteristic == null) {
       throw Exception('Not connected');
@@ -681,6 +722,11 @@ class BLEService extends ChangeNotifier {
       'zone': zone,
       'netName': netName,
     };
+    if (wifiAuth == 'peap') {
+      payload['wauth'] = 'peap';
+      payload['euser'] = eapUser;
+      if (eapId.isNotEmpty) payload['eid'] = eapId;
+    }
     if (discoveryUrl.isNotEmpty) payload['disc'] = discoveryUrl;
     // Cloud alerting service (AWS): the gateway posts readings here so the
     // threshold engine can alert the customer. Bridge.ino reads cloud/cloudKey.
@@ -720,6 +766,16 @@ class BLEService extends ChangeNotifier {
     if (!_ready) { _addLog('Locked — authenticate first', isError: true); return; }
     _addLog('Requesting live sensor list...');
     await _writeCommandWithRetry('NODES?');
+  }
+
+  /// Ask the bridge to scan nearby Wi-Fi networks (SCAN?). The reply arrives
+  /// async as "WIFI|<ssid>:<rssi>:<enc>,..." and populates [wifiNetworks].
+  Future<void> requestWifiScan() async {
+    if (_targetCharacteristic == null) { _addLog('Not connected', isError: true); return; }
+    _wifiNetworks = [];
+    notifyListeners();
+    _addLog('Scanning Wi-Fi networks...');
+    await _writeCommandWithRetry('SCAN?');   // read-only query (allowed pre-auth)
   }
 
   /// Ask the bridge for the routers the C6 leader currently sees in the mesh

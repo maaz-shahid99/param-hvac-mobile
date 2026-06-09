@@ -72,8 +72,10 @@ class SettingsPage extends StatelessWidget {
               },
             ),
             // Cloud alert granularity (admin + signed-in only).
-            if (isAdmin && context.watch<AuthService>().status == AuthStatus.signedIn)
+            if (isAdmin && context.watch<AuthService>().status == AuthStatus.signedIn) ...[
               const _AlertGranularityTile(),
+              const _CollectIntervalTile(),
+            ],
             const Divider(),
             Consumer<AuthService>(
               builder: (context, auth, _) => ListTile(
@@ -288,6 +290,80 @@ class _AlertGranularityTileState extends State<_AlertGranularityTile> {
               ],
               selected: {_value!},
               onSelectionChanged: _busy ? null : (s) => _set(s.first),
+            ),
+    );
+  }
+}
+
+/// Admin control for how often devices sample + forward data (env + sensor).
+/// Cloud setting; the gateway applies it and propagates to routers.
+class _CollectIntervalTile extends StatefulWidget {
+  const _CollectIntervalTile();
+
+  @override
+  State<_CollectIntervalTile> createState() => _CollectIntervalTileState();
+}
+
+class _CollectIntervalTileState extends State<_CollectIntervalTile> {
+  int? _value; // null while loading
+  bool _busy = false;
+  static const List<int> _options = [10, 30, 60, 300, 900, 1800, 3600];
+
+  String _label(int s) {
+    if (s < 60) return '${s}s';
+    if (s < 3600) return '${s ~/ 60}m';
+    return '${s ~/ 3600}h';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final s = await context.read<AuthService>().api.getSettings();
+      if (mounted) setState(() => _value = (s['collect_interval_s'] as num?)?.toInt() ?? 60);
+    } catch (_) {
+      if (mounted) setState(() => _value = 60);
+    }
+  }
+
+  Future<void> _set(int v) async {
+    if (v == _value || _busy) return;
+    final prev = _value;
+    setState(() {
+      _value = v;
+      _busy = true;
+    });
+    try {
+      await context.read<AuthService>().api.setCollectInterval(v);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _value = prev);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not update: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = {..._options, if (_value != null) _value!}.toList()..sort();
+    return ListTile(
+      leading: const Icon(Icons.schedule),
+      title: const Text('Data collection interval'),
+      subtitle: const Text('How often devices sample + forward'),
+      trailing: _value == null
+          ? const SizedBox(
+              width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+          : DropdownButton<int>(
+              value: _value,
+              onChanged: _busy ? null : (v) { if (v != null) _set(v); },
+              items: [for (final s in items) DropdownMenuItem(value: s, child: Text(_label(s)))],
             ),
     );
   }

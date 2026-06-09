@@ -20,8 +20,12 @@ class _RouterSetupDialogState extends State<RouterSetupDialog> {
   final _discController = TextEditingController();
   final _cloudController = TextEditingController();
   final _cloudKeyController = TextEditingController();
+  final _eapUserController = TextEditingController();
+  final _eapIdController = TextEditingController();
   bool _isLoading = false;
   bool _mintingKey = false;
+  bool _enterprise = false;   // WPA2-Enterprise (PEAP/MSCHAPv2)
+  bool _obscurePass = true;
 
   @override
   void initState() {
@@ -40,7 +44,67 @@ class _RouterSetupDialogState extends State<RouterSetupDialog> {
     _discController.dispose();
     _cloudController.dispose();
     _cloudKeyController.dispose();
+    _eapUserController.dispose();
+    _eapIdController.dispose();
     super.dispose();
+  }
+
+  /// Trigger a Wi-Fi scan on the bridge and show a picker of the results.
+  Future<void> _pickNetwork() async {
+    final ble = context.read<BLEService>();
+    await ble.requestWifiScan();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => Consumer<BLEService>(
+        builder: (ctx, b, __) {
+          final nets = b.wifiNetworks;
+          return SafeArea(
+            child: nets.isEmpty
+                ? const SizedBox(
+                    height: 160,
+                    child: Center(
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 12),
+                      Text('Scanning…'),
+                    ])),
+                  )
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final n in nets)
+                        ListTile(
+                          leading: Icon(n.rssi > -60
+                              ? Icons.wifi
+                              : n.rssi > -75
+                                  ? Icons.wifi_2_bar
+                                  : Icons.wifi_1_bar),
+                          title: Text(n.ssid),
+                          subtitle: Text(n.isEnterprise
+                              ? 'Enterprise · ${n.rssi} dBm'
+                              : n.isOpen
+                                  ? 'Open · ${n.rssi} dBm'
+                                  : 'Secured · ${n.rssi} dBm'),
+                          trailing: n.isEnterprise
+                              ? const Icon(Icons.badge_outlined)
+                              : n.isOpen
+                                  ? null
+                                  : const Icon(Icons.lock_outline),
+                          onTap: () {
+                            setState(() {
+                              _ssidController.text = n.ssid;
+                              _enterprise = n.isEnterprise;
+                            });
+                            Navigator.pop(ctx);
+                          },
+                        ),
+                    ],
+                  ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _mintKey() async {
@@ -77,6 +141,9 @@ class _RouterSetupDialogState extends State<RouterSetupDialog> {
         discoveryUrl: _discController.text.trim(),
         cloudUrl: _cloudController.text.trim(),
         cloudKey: _cloudKeyController.text.trim(),
+        wifiAuth: _enterprise ? 'peap' : 'psk',
+        eapUser: _eapUserController.text.trim(),
+        eapId: _eapIdController.text.trim(),
       );
 
       if (!mounted) return;
@@ -110,20 +177,58 @@ class _RouterSetupDialogState extends State<RouterSetupDialog> {
             children: [
               TextFormField(
                 controller: _ssidController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Wi-Fi SSID',
-                  prefixIcon: Icon(Icons.wifi),
+                  prefixIcon: const Icon(Icons.wifi),
+                  suffixIcon: IconButton(
+                    tooltip: 'Scan networks',
+                    icon: const Icon(Icons.search),
+                    onPressed: _pickNetwork,
+                  ),
                 ),
                 validator: (v) => v == null || v.isEmpty ? 'Required' : null,
               ),
-              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Enterprise (WPA2 / PEAP)'),
+                subtitle: const Text('Sign in with a username + password'),
+                value: _enterprise,
+                onChanged: (v) => setState(() => _enterprise = v),
+              ),
+              if (_enterprise) ...[
+                TextFormField(
+                  controller: _eapUserController,
+                  decoration: const InputDecoration(
+                    labelText: 'Username',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  validator: (v) =>
+                      _enterprise && (v == null || v.isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _eapIdController,
+                  decoration: const InputDecoration(
+                    labelText: 'Identity (Optional)',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                    hintText: 'defaults to the username',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextFormField(
                 controller: _passController,
-                decoration: const InputDecoration(
-                  labelText: 'Wi-Fi Password',
-                  prefixIcon: Icon(Icons.lock),
+                decoration: InputDecoration(
+                  labelText: _enterprise ? 'Password' : 'Wi-Fi Password',
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    tooltip: _obscurePass ? 'Show' : 'Hide',
+                    icon: Icon(_obscurePass ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () => setState(() => _obscurePass = !_obscurePass),
+                  ),
                 ),
-                obscureText: true,
+                obscureText: _obscurePass,
                 validator: (v) => v == null || v.isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 12),

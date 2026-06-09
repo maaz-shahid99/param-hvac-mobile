@@ -4,4 +4,4 @@
 /// build is actually installed on the phone (e.g. when debugging "am I running
 /// the latest code?"). Keep it short and increment the trailing number.
 const String kAppVersion = '1.0.0';
-const String kAppBuild = 'b12 · 2026-06-05 · device names';
+const String kAppBuild = 'b15 · 2026-06-09 · durable topology sync (serialized push) + all-probes env';
