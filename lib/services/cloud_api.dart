@@ -243,6 +243,22 @@ class CloudApi {
     return (await _decode(r) as Map<String, dynamic>)['probes'] as List<dynamic>;
   }
 
+  // ---- firmware OTA (optional-update prompt) --------------------------------
+  /// OPTIONAL firmware updates newer than the fleet's current version, for the
+  /// in-app "update available" prompt. Each: {kind, version, current, notes, approved}.
+  /// (Mandatory updates aren't listed — the gateway auto-applies them.)
+  Future<List<dynamic>> otaAvailable() async {
+    final r = await http.get(_u('/v1/ota/available'), headers: _headers());
+    return (await _decode(r) as Map<String, dynamic>)['updates'] as List<dynamic>;
+  }
+
+  /// Admin approves an optional update; the gateway applies it on its next poll.
+  Future<void> approveOta(String kind, int version) async {
+    final r = await http.post(_u('/v1/ota/approve'),
+        headers: _headers(), body: jsonEncode({'kind': kind, 'version': version}));
+    await _decode(r);
+  }
+
   // ---- firmware crash reports -----------------------------------------------
   Future<List<dynamic>> crashes() async {
     final r = await http.get(_u('/v1/crashes'), headers: _headers());

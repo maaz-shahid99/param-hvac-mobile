@@ -15,6 +15,7 @@ import '../widgets/qr_scan_button.dart';
 import '../widgets/commission_history_card.dart';
 import '../widgets/bridge_auth_card.dart';
 import '../widgets/device_scanner_sheet.dart';
+import '../widgets/ota_update_banner.dart';
 
 class HomePage extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -220,6 +221,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           return Column(
             children: [
               ConnectionStatusCard(bleService: bleService),
+              const OtaUpdateBanner(),
               Expanded(
                 child: (!bleService.isConnected && !_hasEverConnected)
                     ? DisconnectedView(bleService: bleService)

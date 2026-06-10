@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/cloud_api.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/monitoring_cards.dart';
+import '../widgets/ota_update_banner.dart';
 
 /// Cloud-only monitoring home for non-admin members: open alerts (with ACK),
 /// live temperatures, and a device online/offline summary. No Bluetooth, no
@@ -107,6 +108,7 @@ class _MemberHomePageState extends State<MemberHomePage> {
               child: ListView(
                 padding: const EdgeInsets.all(12),
                 children: [
+                  const OtaUpdateBanner(),
                   if (_error != null)
                     Card(
                       color: Theme.of(context).colorScheme.errorContainer,
