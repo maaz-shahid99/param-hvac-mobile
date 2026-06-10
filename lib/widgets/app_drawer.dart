@@ -91,10 +91,12 @@ class AppDrawer extends StatelessWidget {
                         icon: Icons.insights_outlined,
                         label: 'Environment & Logs',
                         page: const EnvDataPage()),
-                    _item(context,
-                        icon: Icons.bug_report_outlined,
-                        label: 'Crash Reports',
-                        page: const CrashReportsPage()),
+                    // Crash Reports = firmware diagnostics — admin only.
+                    if (auth.isAdmin)
+                      _item(context,
+                          icon: Icons.bug_report_outlined,
+                          label: 'Crash Reports',
+                          page: const CrashReportsPage()),
                     _item(context,
                         icon: Icons.group_outlined,
                         label: 'Members',
