@@ -2,8 +2,8 @@
 
 The phone app for the HVAC Thread-mesh system. It is the **control plane**: it
 commissions hardware over **BLE** (standing next to it) and manages the fleet
-through the [Cloud Server](https://github.com/YOUR-ORG/hvac-server) over **REST/JWT**. The
-[web dashboard](https://github.com/YOUR-ORG/hvac-web) mirrors the cloud half for desktop; BLE
+through the [Cloud Server](https://github.com/maaz-shahid99/param-hvac-server) over **REST/JWT**. The
+[web dashboard](https://github.com/maaz-shahid99/param-hvac-web) mirrors the cloud half for desktop; BLE
 commissioning is app-only.
 
 ## What it does
@@ -50,6 +50,6 @@ On first launch, sign in (or create an org / join by code) and set the **Cloud
 URL** to your server, e.g. `http://<server-ip>:8002`.
 
 ## Related
-- [Bridge](https://github.com/YOUR-ORG/hvac-firmware) (ESP32-C3, BLE/Wi-Fi) · [Commissioner](https://github.com/YOUR-ORG/hvac-firmware)
-  (ESP32-C6, Thread) · [Cloud Server](https://github.com/YOUR-ORG/hvac-server) ·
-  [web-dashboard](https://github.com/YOUR-ORG/hvac-web).
+- [Bridge](https://github.com/maaz-shahid99/param-hvac-firmware) (ESP32-C3, BLE/Wi-Fi) · [Commissioner](https://github.com/maaz-shahid99/param-hvac-firmware)
+  (ESP32-C6, Thread) · [Cloud Server](https://github.com/maaz-shahid99/param-hvac-server) ·
+  [web-dashboard](https://github.com/maaz-shahid99/param-hvac-web).
